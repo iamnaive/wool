@@ -4,7 +4,7 @@ import { catalog, type FormKey, type AnimSet as AnyAnimSet } from "../game/catal
 /** ===== Constants ===== */
 const DEAD_FALLBACK = "/sprites/dead.png";
 const NFT_CONTRACT = "0x88c78d5852f45935324c6d100052958f694e8446";
-
+const CATA_ACTIVE_KEY = "cata_active_v1"
 /** HUD / food */
 const AVATAR_SCALE_CAP: number | null = 42;
 const FOOD_FRAME_MAX_PX = 42;
@@ -179,6 +179,29 @@ export default function Tamagotchi({
 
   // catastrophe
   const [catastrophe, setCatastrophe] = useState<Catastrophe | null>(null);
+// Persist active catastrophe (so evolution/render restarts won't drop it)
+useEffect(() => {
+  try {
+    const now = Date.now();
+    if (catastrophe && now < (catastrophe.until ?? 0)) {
+      localStorage.setItem(sk(CATA_ACTIVE_KEY), JSON.stringify(catastrophe));
+    } else {
+      localStorage.removeItem(sk(CATA_ACTIVE_KEY));
+    }
+  } catch {}
+}, [catastrophe]);
+
+// Rehydrate catastrophe after evolution (form change) or on mount
+useEffect(() => {
+  try {
+    const raw = localStorage.getItem(sk(CATA_ACTIVE_KEY));
+    if (!raw) return;
+    const saved = JSON.parse(raw) as Catastrophe | null;
+    const stillActive = saved && Date.now() < (saved.until ?? 0);
+    if (stillActive) setCatastrophe(saved!);
+    else localStorage.removeItem(sk(CATA_ACTIVE_KEY));
+  } catch {}
+}, [form]);
 
   /** Refs */
   const animRef = useLatest(anim);
