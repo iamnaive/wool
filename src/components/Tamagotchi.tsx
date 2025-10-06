@@ -320,7 +320,7 @@ export default function Tamagotchi({
         schedule = [...schedule, ...picks].sort((a, b) => a - b);
       }
 
-      localStorage.setItem(sk(CATA_SCHEDULE_KEY), JSON.stringify(schedule.slice(0, 4));
+      localStorage.setItem(sk(CATA_SCHEDULE_KEY), JSON.stringify(schedule.slice(0, 4)));
       if (!consumed) localStorage.setItem(sk(CATA_CONSUMED_KEY), JSON.stringify([]));
     } catch {}
   }, [startTs]); // eslint-disable-line react-hooks/exhaustive-deps
