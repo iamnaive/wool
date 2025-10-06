@@ -11,8 +11,8 @@ import {
   useChainId,
 } from "wagmi";
 import { config as wagmiConfig, MONAD } from "./wagmiConfigLike"; // your existing config (do not change)
-import Tamagotchi from "./Tamagotchi";
-import VaultPanel from "./VaultPanel";
+import Tamagotchi from "./components/Tamagotchi";
+import VaultPanel from "./components/VaultPanel";
 import "./styles.css";
 
 const MONAD_CHAIN_ID = MONAD.id as const;
