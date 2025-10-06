@@ -245,7 +245,6 @@ function AppInner() {
   <div style={{ maxWidth: 980, margin: "0 auto" }}>
     <Tamagotchi />
   </div>
-)}
             <button
               className="btn btn-primary"
               onClick={() => setVaultOpen(true)}
