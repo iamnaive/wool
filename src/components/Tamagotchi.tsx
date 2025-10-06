@@ -195,6 +195,25 @@ export default function Tamagotchi({
   const sleepParamsRef = useRef({ useAutoTime, sleepStart, wakeTime, sleepLocked });
   useEffect(() => { sleepParamsRef.current = { useAutoTime, sleepStart, wakeTime, sleepLocked }; }, [useAutoTime, sleepStart, wakeTime, sleepLocked]);
 
+  // ------- NEW: force-dead preview (to show dead sprite after offline death) -------
+  const [forceDeadPreview, setForceDeadPreview] = useState(false);
+  const forceDeadPreviewRef = useLatest(forceDeadPreview);
+  useEffect(() => {
+    const onForce = () => setForceDeadPreview(true);
+    const onNewGame = () => setForceDeadPreview(false);
+    window.addEventListener("wg:force-dead-preview", onForce as any);
+    window.addEventListener("wg:new-game", onNewGame as any);
+    return () => {
+      window.removeEventListener("wg:force-dead-preview", onForce as any);
+      window.removeEventListener("wg:new-game", onNewGame as any);
+    };
+  }, []);
+  // auto-clear preview when lives restored via props (if ты пробрасываешь lives сюда)
+  useEffect(() => {
+    if ((lives || 0) > 0) setForceDeadPreview(false);
+  }, [lives]);
+  // -------------------------------------------------------------------------------
+
   /** Canvas & RAF */
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -274,7 +293,8 @@ export default function Tamagotchi({
       let schedule: number[] = schedRaw ? JSON.parse(schedRaw) : [];
       const consumed: number[] = consumedRaw ? JSON.parse(consumedRaw) : [];
 
-      let firstAt = startTs + 60_000;
+      // CHANGED: first catastrophe after 30s (was 60s)
+      let firstAt = startTs + 30_000;
       if (isSleepingAt(firstAt)) {
         const maxShiftMins = 180;
         for (let i = 1; i <= maxShiftMins; i++) {
@@ -300,10 +320,10 @@ export default function Tamagotchi({
         schedule = [...schedule, ...picks].sort((a, b) => a - b);
       }
 
-      localStorage.setItem(sk(CATA_SCHEDULE_KEY), JSON.stringify(schedule.slice(0, 4)));
+      localStorage.setItem(sk(CATA_SCHEDULE_KEY), JSON.stringify(schedule.slice(0, 4));
       if (!consumed) localStorage.setItem(sk(CATA_CONSUMED_KEY), JSON.stringify([]));
     } catch {}
-  }, [startTs]); // eslint-disable-line react-hooks/ex exhaustive-deps
+  }, [startTs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Offline catch-up with death surfacing */
   useEffect(() => {
@@ -702,8 +722,12 @@ export default function Tamagotchi({
       // --- Top-right avatar ---
       const nowAbs = Date.now();
       const sleepingNow = isSleepingAt(nowAbs);
+
+      // NEW: effective "dead" for UI (real death OR forced preview)
+      const deadUi = deadRef.current || forceDeadPreviewRef.current;
+
       const avatarAnimKey: AnimKey = (() => {
-        if (deadRef.current) return "idle";
+        if (deadUi) return "idle";
         if (sleepingNow) return (def.sleep?.length ? "sleep" : "idle") as AnimKey;
         if (sickRef.current && (def.sick?.length ?? 0) > 0) return "sick";
         if (statsRef.current.happiness < 0.35) return (def.sad?.length ? "sad" : def.unhappy?.length ? "unhappy" : "idle") as AnimKey;
@@ -760,7 +784,7 @@ export default function Tamagotchi({
 
       // Choose anim
       const chosenAnim: AnimKey = (() => {
-        if (deadRef.current) return "idle";
+        if (deadUi) return "idle";
         if (sleepingNow) return (def.sleep?.length ? "sleep" : "idle") as AnimKey;
         if (sickRef.current) return (def.sick?.length ? "sick" : "idle") as AnimKey;
         if (statsRef.current.happiness < 0.35) return (def.sad?.length ? "sad" : def.unhappy?.length ? "unhappy" : "walk") as AnimKey;
@@ -790,7 +814,7 @@ export default function Tamagotchi({
       let xNext = x + (dir * WALK_SPEED * dt) / 1000;
       const inTurnCooldown = (ts - lastTurnAt) < TURN_COOLDOWN;
 
-      if (!deadRef.current && !sleepingNow) {
+      if (!deadUi && !sleepingNow) {
         if (!inTurnCooldown) {
           if (dir === 1 && xNext >= maxX) {
             dir = -1; lastTurnAt = ts; x = maxX - EDGE_EPS; frameTimer = 0;
@@ -814,7 +838,7 @@ export default function Tamagotchi({
       }
 
       // Draw pet or dead
-      if (deadRef.current) {
+      if (deadUi) {
         const list = deadCandidates(formRef.current);
         const deadSrc = list.find((p) => images[p]);
         const deadImg = deadSrc ? images[deadSrc] : null;
@@ -860,18 +884,14 @@ export default function Tamagotchi({
       }
 
       // Banners
-      // --- завершили рендер «мира» ---
-ctx.restore();
-
-// --- баннеры поверх всего (без Y_SHIFT) ---
-const cat = catastropheRef.current;
-if (cat && nowAbs < cat.until) {
-  drawBanner(ctx, LOGICAL_W, `⚠ ${cat.cause}! stats draining fast`);
-}
-if (!deadRef.current && sleepingNow) {
-  drawBanner(ctx, LOGICAL_W, "😴 Sleeping");
-}
-
+      ctx.restore();
+      const cat = catastropheRef.current;
+      if (cat && nowAbs < cat.until) {
+        drawBanner(ctx, LOGICAL_W, `⚠ ${cat.cause}! stats draining fast`);
+      }
+      if (!deadUi && sleepingNow) {
+        drawBanner(ctx, LOGICAL_W, "😴 Sleeping");
+      }
     };
 
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
@@ -896,7 +916,7 @@ if (!deadRef.current && sleepingNow) {
   const copyAddr = async () => { try { await navigator.clipboard.writeText(NFT_CONTRACT); } catch {} };
 
   /** Death overlay (CTA → откроет модал VaultPanel в App через wg:request-nft) */
-  const DeathOverlay = isDead ? (
+  const DeathOverlay = (isDead || forceDeadPreview) ? (
     <OverlayCard>
       <div style={{ fontSize: 18, marginBottom: 6 }}>Your pet has died</div>
       {deathReason && <div className="muted" style={{ marginBottom: 12 }}>Cause: {deathReason}</div>}
@@ -947,30 +967,31 @@ if (!deadRef.current && sleepingNow) {
         <Bar label="Happiness" value={stats.happiness} h={BAR_H} />
       </div>
 
-{/* Actions */}
-<div
-  style={{
-    marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center",
-    opacity: isDead ? 0.5 : 1, pointerEvents: isDead ? ("none" as const) : ("auto" as const),
-  }}
->
-  {/* ⬇️ вот эта новая кнопка */}
-  <button
-    className="btn"
-    disabled
-    title="Coming soon"
-    style={{ opacity: 0.45, cursor: "not-allowed" }}
-  >
-    🧶 $WOOL
-  </button>
+      {/* Actions */}
+      <div
+        style={{
+          marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center",
+          // NEW: disable UI also for forced dead preview
+          opacity: (isDead || forceDeadPreview) ? 0.5 : 1,
+          pointerEvents: (isDead || forceDeadPreview) ? ("none" as const) : ("auto" as const),
+        }}
+      >
+        {/* ⬇️ эта кнопка как была, просто оставляю для контекста */}
+        <button
+          className="btn"
+          disabled
+          title="Coming soon"
+          style={{ opacity: 0.45, cursor: "not-allowed" }}
+        >
+          🧶 $WOOL
+        </button>
 
-  <button className="btn" onClick={act.feedBurger} disabled={burgerLeft>0}>🍔 Burger{burgerLeft>0?` (${Math.ceil(burgerLeft/1000)}s)`:``}</button>
-  <button className="btn" onClick={act.feedCake} disabled={cakeLeft>0}>🍰 Cake{cakeLeft>0?` (${Math.ceil(cakeLeft/1000)}s)`:``}</button>
-  <button className="btn" onClick={act.play}>🎮 Play</button>
-  <button className="btn" onClick={act.heal} disabled={healLeft>0}>💊 Heal{healLeft>0?` (${Math.ceil(healLeft/1000)}s)`:``}</button>
-  <button className="btn" onClick={act.clean}>🧻 Clean</button>
-    {/* ...остальное без изменений */}
-</div>
+        <button className="btn" onClick={act.feedBurger} disabled={burgerLeft>0}>🍔 Burger{burgerLeft>0?` (${Math.ceil(burgerLeft/1000)}s)`:``}</button>
+        <button className="btn" onClick={act.feedCake} disabled={cakeLeft>0}>🍰 Cake{cakeLeft>0?` (${Math.ceil(cakeLeft/1000)}s)`:``}</button>
+        <button className="btn" onClick={act.play}>🎮 Play</button>
+        <button className="btn" onClick={act.heal} disabled={healLeft>0}>💊 Heal{healLeft>0?` (${Math.ceil(healLeft/1000)}s)`:``}</button>
+        <button className="btn" onClick={act.clean}>🧻 Clean</button>
+      </div>
 
       {/* Sleep controls */}
       <div
