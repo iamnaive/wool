@@ -241,13 +241,11 @@ function AppInner() {
       )}
 
       {/* Locked (no lives) — death screen */}
-      {gate === "locked" && (
-        <section className="card splash">
-          <div className="splash-inner">
-            <div className="splash-title">Your pet died while you were away</div>
-            <div className="muted">
-              Send 1 NFT → get 1 life and continue.
-            </div>
+     {gate === "locked" && (
+  <div style={{ maxWidth: 980, margin: "0 auto" }}>
+    <Tamagotchi />
+  </div>
+)}
             <button
               className="btn btn-primary"
               onClick={() => setVaultOpen(true)}
