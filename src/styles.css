@@ -1,0 +1,193 @@
+/* ====== WOOLIGOTCHI UI (dark, no libs) ====== */
+:root{
+  --bg0:#07070c;
+  --bg1:#0b0e17;
+  --card:#0e1221cc;
+  --muted:#a3a7be;
+  --text:#edf0ff;
+  --primary:#7c4dff;
+  --primary-2:#a48bff;
+  --primary-3:#5c2fff;
+  --border:#21263d;
+  --ok:#36e38a;
+  --warn:#ffd36d;
+  --err:#ff6b74;
+  --r:16px;
+  --shadow: 0 14px 40px rgba(0,0,0,.45), 0 1px 0 rgba(255,255,255,.04) inset;
+}
+
+*{box-sizing:border-box}
+html,body,#root{height:100%}
+html,body{
+  background:
+    radial-gradient(1200px 800px at 85% -10%, rgba(124,77,255,.22) 0%, transparent 60%),
+    radial-gradient(900px 650px at 10% 110%, rgba(0,171,199,.18) 0%, transparent 65%),
+    linear-gradient(180deg, var(--bg0), var(--bg1) 60%, #0a0c14);
+  color:var(--text);
+  font: 14px/1.5 "Inter", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  margin:0;
+  letter-spacing:.1px;
+}
+
+/* ===== Layout ===== */
+.page{ min-height:100%; padding:28px clamp(16px,3vw,40px); display:flex; flex-direction:column; gap:22px; }
+.topbar{ display:flex; align-items:center; justify-content:space-between; gap:14px; }
+.brand{ display:flex; align-items:center; gap:12px; }
+.logo{
+  width:38px; height:38px; border-radius:12px;
+  display:grid; place-items:center; font-size:22px;
+  background:radial-gradient(120% 120% at 30% 20%, #8a66ff 0%, #5b32e8 40%, #2a2f46 85%);
+  box-shadow: 0 10px 25px rgba(124,77,255,.45);
+}
+.title{
+  font-weight:900; line-height:1.05;
+  font-size: clamp(22px, 3.4vw, 34px);
+  letter-spacing:.4px;
+  background: linear-gradient(90deg, #fff, #cfd3ff 40%, #a7b1ff 70%, #e3ccff);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  text-shadow: 0 0 30px rgba(124,77,255,.18);
+}
+
+/* ===== Cards ===== */
+.card{
+  position:relative;
+  background: linear-gradient(180deg, rgba(23,27,47,.82), rgba(14,18,33,.78));
+  border:1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  padding:16px;
+  backdrop-filter: blur(10px) saturate(1.05);
+}
+.card + .card{ margin-top:12px; }
+.card-title{ font-size:16px; font-weight:800; margin:0 0 10px; }
+
+/* ===== Buttons ===== */
+.btn{
+  border:1px solid var(--border);
+  background: linear-gradient(180deg, #161b31, #0f1426);
+  color:var(--text);
+  padding:10px 14px; border-radius:12px; cursor:pointer;
+  transition: transform .08s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease, filter .18s ease;
+  box-shadow: var(--shadow);
+}
+.btn:hover{ transform: translateY(-1px); border-color:#2b3350; filter: saturate(1.08); }
+.btn:active{ transform: translateY(0); }
+.btn:disabled{ opacity:.55; cursor:not-allowed; }
+.btn-primary{
+  border-color:transparent;
+  background:
+    radial-gradient(100% 120% at 30% 10%, #c8b6ff 0%, transparent 40%),
+    linear-gradient(180deg, var(--primary), var(--primary-3));
+  color:white; font-weight:800; letter-spacing:.2px;
+  box-shadow: 0 15px 36px rgba(124,77,255,.45);
+}
+.btn-ghost{ background:linear-gradient(180deg, #12172a, #0e1426); border:1px solid #232846; }
+.btn-lg{ padding:16px 22px; font-size:16px; }
+
+/* ===== Pills / inputs ===== */
+.pill{
+  padding:6px 10px; border-radius:999px;
+  background:linear-gradient(180deg, #111523, #0f1426);
+  border:1px solid var(--border); box-shadow:var(--shadow);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+.walletRow{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.muted{ color:var(--muted); }
+.input{
+  width:100%; background:#0e1325; color:var(--text);
+  border:1px solid var(--border); border-radius:12px;
+  padding:10px 12px; outline:none; box-shadow: var(--shadow);
+}
+
+/* ===== Modal ===== */
+.modal{ position: fixed; inset:0; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,.45); z-index:9999; }
+.wallet-grid{ display:grid; grid-template-columns:1fr; gap:10px; }
+
+/* ===== Splash (start screen) ===== */
+.splash{
+  min-height: 62vh;
+  display:grid; place-items:center;
+}
+.splash-inner{
+  text-align:center;
+  display:grid; gap:16px;
+}
+.splash-title{
+  font-size: clamp(30px,5vw,50px);
+  font-weight: 900;
+  letter-spacing:.6px;
+  background: linear-gradient(90deg, #ffffff, #d8dcff 40%, #c7b8ff 70%, #ffe2ff);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+
+/* ===== Game shell (green outline) ===== */
+.game-shell{
+  border: 2px solid #21c77b66; /* green frame per spec */
+  border-radius: 18px;
+  padding: 16px;
+  margin-top: 12px;
+  box-shadow: 0 10px 36px rgba(0,0,0,.35);
+  background: linear-gradient(180deg, rgba(20,24,42,.6), rgba(12,16,31,.6));
+}
+
+/* layout: avatar | stage
+           hud spans two columns */
+.game-grid{
+  display:grid;
+  grid-template-columns: 220px 1fr;
+  grid-template-rows: auto auto;
+  gap: 16px;
+}
+
+/* ===== Avatar (purple box) ===== */
+.avatar{
+  grid-column: 1;
+  grid-row: 1 / span 1;
+  height: 240px;                     /* increased to align with stage */
+  display:grid; place-items:center;
+  border: 2px solid #a06bff66;       /* purple frame */
+  border-radius: 16px;
+  background: linear-gradient(180deg,#1a1530,#12142a);
+}
+
+/* ===== Stage (red box) — hosts PixelViewport ===== */
+.stage{
+  grid-column: 2;
+  grid-row: 1;
+  min-height: 240px;                 /* enough space for 320×180 upscaling */
+  border: 2px solid #ff5b5b66;       /* red frame */
+  border-radius: 16px;
+  overflow: hidden;
+  position: relative;
+  background:
+    radial-gradient(100% 100% at 20% 10%, rgba(124,77,255,.18), transparent 60%),
+    linear-gradient(180deg,#0f1426,#0c1223);
+}
+
+/* PixelViewport wrapper inside stage — keep pixels crisp */
+.stage-viewport{
+  image-rendering: pixelated;
+}
+
+/* ===== HUD (yellow box) ===== */
+.hud{
+  grid-column: 1 / span 2;
+  grid-row: 2;
+  border:2px solid #ffd36d66;        /* yellow frame */
+  border-radius: 16px;
+  padding: 12px;
+  background: linear-gradient(180deg,#12172a,#0e1426);
+  display:grid; gap:12px;
+}
+
+/* ===== Progress bars ===== */
+.stat{ display:grid; gap:6px; }
+.stat-label{ font-size:12px; color:var(--muted); }
+.stat-bar{ height:8px; border-radius:999px; background:#14192e; border:1px solid #222846; overflow:hidden; }
+.stat-fill{ height:100%; background:linear-gradient(90deg,#7c4dff,#22b35b); box-shadow: 0 0 10px rgba(124,77,255,.35) inset; }
+
+/* ===== Log ===== */
+pre{ margin:0; white-space:pre-wrap; word-break:break-word; font-family: ui-monospace, Menlo, Consolas, "Liberation Mono", monospace; }
+.log{
+  background:#0c1122; border:1px solid #1b2340; border-radius:12px; padding:12px; color:#dfe3ff; font-size:12px;
+}
