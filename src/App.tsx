@@ -10,12 +10,15 @@ import {
   useDisconnect,
   useChainId,
 } from "wagmi";
-import { config as wagmiConfig, MONAD } from "./wagmiConfigLike"; // your existing config (do not change)
+import wagmiConfig from "./wagmiConfigLike"; // default export ONLY
 import Tamagotchi from "./components/Tamagotchi";
 import VaultPanel from "./components/VaultPanel";
 import "./styles.css";
 
-const MONAD_CHAIN_ID = MONAD.id as const;
+// Use env for chain id (your wagmiConfigLike does not export chain)
+const MONAD_CHAIN_ID: number = Number(
+  (import.meta as any).env?.VITE_CHAIN_ID ?? 10143
+);
 
 function AppInner() {
   const { isConnected, address } = useAccount();
@@ -45,34 +48,35 @@ function AppInner() {
     if (isConnected) setKeepGameMounted(true);
   }, [isConnected]);
 
-  // Lives counting from backend events (optional)
+  // Lives count coming from backend via custom event (optional)
   const [livesCount, setLivesCount] = useState(0);
 
-  // Force the UI into "game" state right after NFT confirm,
-  // so the user won't see "Send NFT" again while backend syncs.
+  // Force the UI into "game" immediately after NFT confirm,
+  // so user won’t see "Send NFT" again while backend syncs.
   const [forceGame, setForceGame] = useState(false);
 
-  // Bridge events: Tamagotchi requests → open Vault; Vault confirms → close & force game
+  // Bridge events: Tamagotchi -> App (open vault modal / grant life)
   useEffect(() => {
     const onRequestNft = () => setVaultOpen(true);
 
     const onConfirmed = (e: any) => {
       // Close the modal immediately
       setVaultOpen(false);
-      // Force enter the game even if lives haven't synced yet
+      // Force game even if lives haven't synced yet
       setForceGame(true);
-      // Also bump local lives visually (non-authoritative), so UI reflects the gain
+      // Soft bump lives visually; backend will overwrite soon
       setLivesCount((prev) => (prev > 0 ? prev : 1));
-      // (Authoritative counter will arrive via backend "wg:lives-changed" soon.)
+      // If you also mirror to local storage elsewhere by chainId, use MONAD_CHAIN_ID
+      // to avoid mismatched keys when chainId is undefined during reconnects.
+      // Example (only if you have a local store):
+      // grantLives(MONAD_CHAIN_ID, address, 1);
     };
 
     const onLivesChanged = (e: any) => {
       try {
         const d = e?.detail || {};
-        // If backend sends chain/address, you can check them here; otherwise just trust lives.
         if (typeof d.lives === "number") {
           setLivesCount(d.lives);
-          // When real lives arrive (>0), we can stop forcing
           if (d.lives > 0) setForceGame(false);
         }
       } catch {
@@ -88,7 +92,7 @@ function AppInner() {
       window.removeEventListener("wg:nft-confirmed", onConfirmed as any);
       window.removeEventListener("wg:lives-changed", onLivesChanged as any);
     };
-  }, []);
+  }, [address]);
 
   // Gate:
   // - If never connected: show splash
