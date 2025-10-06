@@ -1,8 +1,8 @@
 // src/App.tsx
-// Keep game mounted on wallet disconnect; avoid repeated "Send NFT" after confirm.
+// Keep game mounted on wallet disconnect; show dead sprite on offline death.
 // Comments: English only.
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   http,
   createConfig,
@@ -141,19 +141,11 @@ function AppInner() {
   // Bridge events: Tamagotchi → App (open Vault); Vault → App (confirmed)
   useEffect(() => {
     const onRequestNft = () => setVaultOpen(true);
-
-    const onConfirmed = (e: any) => {
-      // Close modal immediately
+    const onConfirmed = () => {
       setVaultOpen(false);
-      // Force enter the game even if backend lives haven't synced yet
       setForceGame(true);
-      // Soft bump UI lives so the user won't see "Send NFT" again
       setLivesCount((prev) => (prev > 0 ? prev : 1));
-      // If you mirror to local storage elsewhere by chainId, always use MONAD_CHAIN_ID here
-      // to avoid mismatched keys during reconnects.
-      // Example: grantLives(MONAD_CHAIN_ID, address, 1);
     };
-
     window.addEventListener("wg:request-nft", onRequestNft as any);
     window.addEventListener("wg:nft-confirmed", onConfirmed as any);
     return () => {
@@ -163,9 +155,6 @@ function AppInner() {
   }, [address]);
 
   // Gate:
-  // - If never connected: show splash
-  // - Else if 0 lives and not forcing game: show locked
-  // - Else: show game (do not unmount on disconnect)
   const gate: "splash" | "locked" | "game" =
     !isConnected && !keepGameMounted
       ? "splash"
@@ -173,7 +162,7 @@ function AppInner() {
       ? "game"
       : "locked";
 
-  // When we enter the "locked" gate, force the pet to render as dead (preview)
+  // Force dead preview inside Tamagotchi when locked (offline death UX)
   useEffect(() => {
     if (gate === "locked") {
       window.dispatchEvent(new CustomEvent("wg:force-dead-preview"));
@@ -240,20 +229,11 @@ function AppInner() {
         </section>
       )}
 
-      {/* Locked (no lives) — death screen */}
-     {gate === "locked" && (
-  <div style={{ maxWidth: 980, margin: "0 auto" }}>
-    <Tamagotchi />
-  </div>
-            <button
-              className="btn btn-primary"
-              onClick={() => setVaultOpen(true)}
-              style={{ marginTop: 12 }}
-            >
-              Send NFT
-            </button>
-          </div>
-        </section>
+      {/* Locked (no lives) — render Tamagotchi to show dead sprite & overlay */}
+      {gate === "locked" && (
+        <div style={{ maxWidth: 980, margin: "0 auto" }}>
+          <Tamagotchi />
+        </div>
       )}
 
       {/* Game stays mounted even if wallet disconnects */}
