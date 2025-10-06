@@ -1,144 +1,29 @@
 // src/App.tsx
-// Keep game mounted on wallet disconnect; death flow via VaultPanel.
+// Keep game mounted on wallet disconnect; avoid repeated "Send NFT" after confirm.
 // Comments: English only.
 
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  http,
-  createConfig,
   WagmiProvider,
   useAccount,
   useConnect,
   useDisconnect,
   useChainId,
-  useSwitchChain,
 } from "wagmi";
-import { injected, walletConnect, coinbaseWallet } from "wagmi/connectors";
-import { defineChain } from "viem";
+import { config as wagmiConfig, MONAD } from "./wagmiConfigLike"; // your existing config (do not change)
+import Tamagotchi from "./Tamagotchi";
+import VaultPanel from "./VaultPanel";
+import "./styles.css";
 
-import VaultPanel from "./components/VaultPanel";
-import Tamagotchi from "./components/Tamagotchi";
+const MONAD_CHAIN_ID = MONAD.id as const;
 
-// ===== ENV =====
-const MONAD_CHAIN_ID =
-  Number((import.meta as any).env?.VITE_CHAIN_ID ?? 10143) || 10143;
-const RPC_URL =
-  String((import.meta as any).env?.VITE_RPC_URL || "http://127.0.0.1:8545");
-const WC_ID = (import.meta as any).env?.VITE_WALLETCONNECT_ID || "";
-const CB_APP = (import.meta as any).env?.VITE_COINBASE_APP || "";
-
-// ===== CHAIN =====
-const MONAD = defineChain({
-  id: MONAD_CHAIN_ID,
-  name: "Monad Testnet",
-  nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
-  rpcUrls: { default: { http: [RPC_URL] } },
-  testnet: true,
-});
-
-// ===== CONNECTORS =====
-const connectorsList = [
-  injected({ shimDisconnect: true }),
-  WC_ID
-    ? walletConnect({
-        projectId: WC_ID,
-        metadata: {
-          name: "Wooligotchi",
-          description: "Send 1 NFT → get 1 life",
-          url: "https://example.local",
-          icons: [],
-        },
-        showQrModal: true,
-      })
-    : null,
-  CB_APP ? coinbaseWallet({ appName: CB_APP }) : null,
-].filter(Boolean) as any[];
-
-// ===== WAGMI CONFIG =====
-const config = createConfig({
-  chains: [MONAD],
-  connectors: connectorsList,
-  transports: { [MONAD.id]: http(RPC_URL) },
-});
-
-// ===== Lives mirror (optional small helper) =====
-function useRemoteLives(chainId?: number, address?: string | null) {
-  const [lives, setLives] = useState(0);
-  useEffect(() => {
-    let t: any;
-    async function tick() {
-      try {
-        // Backend endpoint (optional). If you don't have it, keep lives at 0 until granted.
-        const base =
-          (import.meta as any).env?.VITE_LIVES_REST || "http://localhost:8787";
-        if (!address) {
-          setLives(0);
-          return;
-        }
-        const r = await fetch(
-          `${String(base).replace(/\/$/, "")}/lives/${address}`
-        );
-        const j = r.ok ? await r.json() : { lives: 0 };
-        setLives(Number(j?.lives || 0));
-        // also broadcast to anyone who listens
-        window.dispatchEvent(
-          new CustomEvent("wg:lives-changed", {
-            detail: { chainId: chainId ?? MONAD_CHAIN_ID, address, lives: Number(j?.lives || 0) },
-          })
-        );
-      } catch {
-        // keep last value
-      }
-    }
-    tick();
-    t = setInterval(tick, 3000);
-    return () => clearInterval(t);
-  }, [chainId, address]);
-  return lives;
-}
-
-// ===== App =====
 function AppInner() {
   const { isConnected, address } = useAccount();
   const chainId = useChainId();
   const { connect, connectors, status: connectStatus } = useConnect();
   const { disconnect } = useDisconnect();
-  const { switchChain } = useSwitchChain();
 
-  // Modal with VaultPanel
-  const [vaultOpen, setVaultOpen] = useState(false);
-
-  // --- FIX: keep the game mounted after first successful connect
-  const [keepGameMounted, setKeepGameMounted] = useState(false);
-  useEffect(() => {
-    if (isConnected) setKeepGameMounted(true);
-  }, [isConnected]);
-
-  // Lives from backend (does not unmount game)
-  const lives = useRemoteLives(chainId, address);
-
-  // Event bridge: Tamagotchi -> App (open vault modal / grant life)
-  useEffect(() => {
-    function onRequestNft() {
-      setVaultOpen(true);
-    }
-    function onConfirmed() {
-      // close modal on optimistic or final confirm
-      setVaultOpen(false);
-    }
-    window.addEventListener("wg:request-nft", onRequestNft as any);
-    window.addEventListener("wg:nft-confirmed", onConfirmed as any);
-    return () => {
-      window.removeEventListener("wg:request-nft", onRequestNft as any);
-      window.removeEventListener("wg:nft-confirmed", onConfirmed as any);
-    };
-  }, []);
-
-  // Gate: do NOT drop to splash if user already played (keepGameMounted)
-  const gate: "splash" | "locked" | "game" =
-    !isConnected && !keepGameMounted ? "splash" : lives <= 0 ? "locked" : "game";
-
-  // Wallet picker modal (simple)
+  // Wallet picker modal
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickWallet = async (connectorId: string) => {
     try {
@@ -150,6 +35,71 @@ function AppInner() {
       alert(e?.shortMessage || e?.message || "Connect failed");
     }
   };
+
+  // Send-NFT modal (Vault)
+  const [vaultOpen, setVaultOpen] = useState(false);
+
+  // Do not unmount the game after the first successful connect
+  const [keepGameMounted, setKeepGameMounted] = useState(false);
+  useEffect(() => {
+    if (isConnected) setKeepGameMounted(true);
+  }, [isConnected]);
+
+  // Lives counting from backend events (optional)
+  const [livesCount, setLivesCount] = useState(0);
+
+  // Force the UI into "game" state right after NFT confirm,
+  // so the user won't see "Send NFT" again while backend syncs.
+  const [forceGame, setForceGame] = useState(false);
+
+  // Bridge events: Tamagotchi requests → open Vault; Vault confirms → close & force game
+  useEffect(() => {
+    const onRequestNft = () => setVaultOpen(true);
+
+    const onConfirmed = (e: any) => {
+      // Close the modal immediately
+      setVaultOpen(false);
+      // Force enter the game even if lives haven't synced yet
+      setForceGame(true);
+      // Also bump local lives visually (non-authoritative), so UI reflects the gain
+      setLivesCount((prev) => (prev > 0 ? prev : 1));
+      // (Authoritative counter will arrive via backend "wg:lives-changed" soon.)
+    };
+
+    const onLivesChanged = (e: any) => {
+      try {
+        const d = e?.detail || {};
+        // If backend sends chain/address, you can check them here; otherwise just trust lives.
+        if (typeof d.lives === "number") {
+          setLivesCount(d.lives);
+          // When real lives arrive (>0), we can stop forcing
+          if (d.lives > 0) setForceGame(false);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    window.addEventListener("wg:request-nft", onRequestNft as any);
+    window.addEventListener("wg:nft-confirmed", onConfirmed as any);
+    window.addEventListener("wg:lives-changed", onLivesChanged as any);
+    return () => {
+      window.removeEventListener("wg:request-nft", onRequestNft as any);
+      window.removeEventListener("wg:nft-confirmed", onConfirmed as any);
+      window.removeEventListener("wg:lives-changed", onLivesChanged as any);
+    };
+  }, []);
+
+  // Gate:
+  // - If never connected: show splash
+  // - Else if we have no lives and not forcing game: show locked
+  // - Else: show game (do not unmount on disconnect)
+  const gate: "splash" | "locked" | "game" =
+    !isConnected && !keepGameMounted
+      ? "splash"
+      : forceGame || livesCount > 0
+      ? "game"
+      : "locked";
 
   return (
     <div className="page">
@@ -173,7 +123,6 @@ function AppInner() {
           ) : (
             <>
               {keepGameMounted && (
-                // Small banner while game stays alive
                 <span
                   className="pill"
                   style={{
@@ -212,7 +161,7 @@ function AppInner() {
         </section>
       )}
 
-      {/* Locked (no lives): death screen + prompt to send NFT */}
+      {/* Locked (no lives) — death screen */}
       {gate === "locked" && (
         <section className="card splash">
           <div className="splash-inner">
@@ -300,7 +249,7 @@ function AppInner() {
 
 export default function App() {
   return (
-    <WagmiProvider config={config}>
+    <WagmiProvider config={wagmiConfig}>
       <AppInner />
     </WagmiProvider>
   );
