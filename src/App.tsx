@@ -131,13 +131,6 @@ function AppInner() {
   // UI lives + force flag so we don't show "Send NFT" again after confirm
   const [livesCount, setLivesCount] = useState(0);
   const [forceGame, setForceGame] = useState(false);
-  
-// When we enter the "locked" gate, force the pet to render as dead (preview)
-useEffect(() => {
-  if (gate === "locked") {
-    window.dispatchEvent(new CustomEvent("wg:force-dead-preview"));
-  }
-}, [gate]);
 
   // Keep UI lives in sync with backend
   useEffect(() => {
@@ -179,6 +172,13 @@ useEffect(() => {
       : forceGame || livesCount > 0
       ? "game"
       : "locked";
+
+  // When we enter the "locked" gate, force the pet to render as dead (preview)
+  useEffect(() => {
+    if (gate === "locked") {
+      window.dispatchEvent(new CustomEvent("wg:force-dead-preview"));
+    }
+  }, [gate]);
 
   return (
     <div className="page">
@@ -242,23 +242,22 @@ useEffect(() => {
 
       {/* Locked (no lives) — death screen */}
       {gate === "locked" && (
-  <section className="card splash">
-    <div className="splash-inner">
-      <div className="splash-title">Your pet died while you were away</div>
-      <div className="muted">
-        Send 1 NFT → get 1 life and continue.
-      </div>
-      <button
-        className="btn btn-primary"
-        onClick={() => setVaultOpen(true)}
-        style={{ marginTop: 12 }}
-      >
-        Send NFT
-      </button>
-    </div>
-  </section>
-)}
-
+        <section className="card splash">
+          <div className="splash-inner">
+            <div className="splash-title">Your pet died while you were away</div>
+            <div className="muted">
+              Send 1 NFT → get 1 life and continue.
+            </div>
+            <button
+              className="btn btn-primary"
+              onClick={() => setVaultOpen(true)}
+              style={{ marginTop: 12 }}
+            >
+              Send NFT
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* Game stays mounted even if wallet disconnects */}
       {gate === "game" && (
