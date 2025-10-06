@@ -222,15 +222,24 @@ useEffect(() => {
   const [forceDeadPreview, setForceDeadPreview] = useState(false);
   const forceDeadPreviewRef = useLatest(forceDeadPreview);
   useEffect(() => {
-    const onForce = () => setForceDeadPreview(true);
-    const onNewGame = () => setForceDeadPreview(false);
-    window.addEventListener("wg:force-dead-preview", onForce as any);
-    window.addEventListener("wg:new-game", onNewGame as any);
-    return () => {
-      window.removeEventListener("wg:force-dead-preview", onForce as any);
-      window.removeEventListener("wg:new-game", onNewGame as any);
-    };
-  }, []);
+  const onForce = () => {
+    // показываем мёртвого только если питомец реально уже "жил" раньше
+    const hadHistory =
+      !!localStorage.getItem(sk(START_TS_KEY)) || (ageRef.current ?? 0) > 0;
+    if (!deadRef.current && hadHistory) {
+      setForceDeadPreview(true);
+    }
+  };
+  const onNewGame = () => setForceDeadPreview(false);
+
+  window.addEventListener("wg:force-dead-preview", onForce as any);
+  window.addEventListener("wg:new-game", onNewGame as any);
+  return () => {
+    window.removeEventListener("wg:force-dead-preview", onForce as any);
+    window.removeEventListener("wg:new-game", onNewGame as any);
+  };
+}, []);
+
   // auto-clear preview when lives restored via props (if ты пробрасываешь lives сюда)
   useEffect(() => {
     if ((lives || 0) > 0) setForceDeadPreview(false);
@@ -1006,7 +1015,7 @@ useEffect(() => {
           title="Coming soon"
           style={{ opacity: 0.45, cursor: "not-allowed" }}
         >
-          🧶 $WOOL
+          🧶 WOOL
         </button>
 
         <button className="btn" onClick={act.feedBurger} disabled={burgerLeft>0}>🍔 Burger{burgerLeft>0?` (${Math.ceil(burgerLeft/1000)}s)`:``}</button>
