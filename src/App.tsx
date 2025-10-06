@@ -10,7 +10,7 @@ import {
   useDisconnect,
   useChainId,
 } from "wagmi";
-import wagmiConfig from "./wagmiConfigLike"; // default export ONLY
+import { wagmiConfig } from "./wagmiConfigLike"; // default export ONLY
 import Tamagotchi from "./components/Tamagotchi";
 import VaultPanel from "./components/VaultPanel";
 import "./styles.css";
