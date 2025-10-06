@@ -62,7 +62,7 @@ const BAR_H = 6, BASE_GROUND = 48, Y_SHIFT = 26;
 
 /** Vertical adjustments */
 const EXTRA_DOWN = 10;      // poops & scoop lower
-// питомца поднимаем вверх на 27 px относительно прежней логики
+
 const PET_RAISE  = 1;
 
 const HEAL_COOLDOWN_MS = 60_000;
@@ -83,7 +83,7 @@ const SCOOP_HEIGHT_TARGET = 22;
 const CLEAN_FINISH_CLEANLINESS = 0.95;
 
 /** Catastrophes */
-const CATA_DURATION_MS = 60_000;
+const CATA_DURATION_MS = 30_000;
 const CATASTROPHE_CAUSES = ["food poisoning", "mysterious flu", "meteor dust", "bad RNG", "doom day syndrome"] as const;
 
 export default function Tamagotchi({
