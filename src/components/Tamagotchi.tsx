@@ -37,13 +37,6 @@ const FEED_FRAMES = {
 
 const SCOOP_SRC = "/sprites/ui/scoop.png";
 
-/** === WOOL === assets (3 different yarn sprites) */
-const YARN_SRCS = [
-  "/sprites/ui/yarn/1.png",
-  "/sprites/ui/yarn/2.png",
-  "/sprites/ui/yarn/3.png",
-];
-
 /** Storage keys (namespaced by wallet address) */
 const START_TS_KEY = "start_ts_v2";
 const LAST_SEEN_KEY = "last_seen_v3";
@@ -61,16 +54,6 @@ const STATS_KEY = "stats_v1";
 const SICK_KEY = "sick_v1";
 const DEAD_KEY = "dead_v1";
 const DEATH_REASON_KEY = "death_reason_v1";
-
-/** === WOOL === keys (per address namespace) */
-const WOOL_BAL_KEY = "wool_balance_v2";
-const WOOL_BAL_SIG_KEY = "wool_balance_sig_v2";
-const WOOL_TODAY_KEY = "wool_today_v2";
-const WOOL_TODAY_SIG_KEY = "wool_today_sig_v2";
-const WOOL_DAY_KEY = "wool_day_v2";
-const WOOL_SCHEDULE_KEY = "wool_schedule_v1";   // array of ms timestamps for today
-const WOOL_SPAWNED_KEY = "wool_spawned_v1";     // array of ms timestamps that already spawned (subset of schedule)
-const WOOL_DROPS_KEY = "wool_drops_v1";         // ground items
 
 /** Scene */
 const LOGICAL_W = 320, LOGICAL_H = 180;
@@ -103,10 +86,6 @@ const CLEAN_FINISH_CLEANLINESS = 0.95;
 const CATA_DURATION_MS = 30_000;
 const CATASTROPHE_CAUSES = ["food poisoning", "mysterious flu", "meteor dust", "bad RNG", "doom day syndrome"] as const;
 
-/** === WOOL === daily config */
-const WOOL_DAILY_MAX = 5;              // exactly 5 per UTC day
-const WOOL_PEPPER = "wg:pepper:v1";    // simple integrity pepper
-
 export default function Tamagotchi({
   currentForm,
   lives = 0,
@@ -114,7 +93,7 @@ export default function Tamagotchi({
   onEvolve,
   walletAddress,
 }: {
-  currentForm: FormKey;
+  currentForm?: FormKey;
   lives?: number;
   onLoseLife?: () => void;
   onEvolve?: (next?: FormKey) => FormKey | void;
@@ -135,7 +114,8 @@ export default function Tamagotchi({
   };
 
   /** Legacy names normalize */
-  const normalizeForm = (f: string): FormKey => {
+  const normalizeForm = (f: string | undefined): FormKey => {
+    if (!f) return "egg";
     const map: Record<string, FormKey> = {
       char1: "chog_child",       char1_adult: "Chog",
       char2: "molandak_child",   char2_adult: "Molandak",
@@ -201,35 +181,6 @@ export default function Tamagotchi({
   // catastrophe
   const [catastrophe, setCatastrophe] = useState<Catastrophe | null>(null);
 
-  /** === WOOL === state */
-  type Yarn = { x: number; kind: number }; // kind: 0..2 for 3 sprites
-  const [yarnDrops, setYarnDrops] = useState<Yarn[]>(() => {
-    const saved = safeReadJSON<Yarn[]>(sk(WOOL_DROPS_KEY));
-    return Array.isArray(saved) ? saved.slice(0, WOOL_DAILY_MAX) : [];
-  });
-  const [woolBalance, setWoolBalance] = useState<number>(() => {
-    const vRaw = Number(localStorage.getItem(sk(WOOL_BAL_KEY)) || 0);
-    const sig = localStorage.getItem(sk(WOOL_BAL_SIG_KEY)) || "";
-    return verifySignedNumber(vRaw, sig, addr) ? Math.max(0, vRaw) : 0;
-  });
-  const [woolToday, setWoolToday] = useState<number>(() => {
-    const vRaw = Number(localStorage.getItem(sk(WOOL_TODAY_KEY)) || 0);
-    const sig = localStorage.getItem(sk(WOOL_TODAY_SIG_KEY)) || "";
-    return verifySignedNumber(vRaw, sig, addr) ? Math.max(0, Math.min(WOOL_DAILY_MAX, vRaw)) : 0;
-  });
-  const [woolDay, setWoolDay] = useState<number>(() => {
-    const v = Number(localStorage.getItem(sk(WOOL_DAY_KEY)) || currentUtcDay());
-    return Number.isFinite(v) ? v : currentUtcDay();
-  });
-  const [woolSchedule, setWoolSchedule] = useState<number[]>(() => {
-    const arr = safeReadJSON<number[]>(sk(WOOL_SCHEDULE_KEY));
-    return Array.isArray(arr) ? arr : [];
-  });
-  const [woolSpawned, setWoolSpawned] = useState<number[]>(() => {
-    const arr = safeReadJSON<number[]>(sk(WOOL_SPAWNED_KEY));
-    return Array.isArray(arr) ? arr : [];
-  });
-
   /** Refs */
   const animRef = useLatest(anim);
   const statsRef = useLatest(stats);
@@ -241,13 +192,6 @@ export default function Tamagotchi({
   const formRef = useLatest(form);
   const foodAnimRef = useLatest(foodAnim);
   const cleaningRef = useLatest(cleaning);
-
-  const yarnRef = useLatest(yarnDrops);
-  const woolRef = useLatest(woolBalance);
-  const woolTodayRef = useLatest(woolToday);
-  const woolDayRef = useLatest(woolDay);
-  const woolScheduleRef = useLatest(woolSchedule);
-  const woolSpawnedRef = useLatest(woolSpawned);
 
   const sleepParamsRef = useRef({ useAutoTime, sleepStart, wakeTime, sleepLocked });
   useEffect(() => { sleepParamsRef.current = { useAutoTime, sleepStart, wakeTime, sleepLocked }; }, [useAutoTime, sleepStart, wakeTime, sleepLocked]);
@@ -293,9 +237,6 @@ export default function Tamagotchi({
     FEED_FRAMES.burger.forEach(u => set.add(u));
     FEED_FRAMES.cake.forEach(u => set.add(u));
     set.add(SCOOP_SRC);
-    // === WOOL ===
-    YARN_SRCS.forEach(u => set.add(u));
-    //
     deadCandidates(form).forEach(u => set.add(u));
     const egg = catalog["egg"] || {};
     (egg.idle ?? egg.walk ?? []).forEach(u => set.add(u));
@@ -483,24 +424,6 @@ export default function Tamagotchi({
   useEffect(() => { try { localStorage.setItem(sk(DEATH_REASON_KEY), JSON.stringify(deathReason)); } catch {} }, [deathReason, addr]);
   useEffect(() => { try { localStorage.setItem(sk(POOPS_KEY), JSON.stringify(poops.slice(-12))); } catch {} }, [poops, addr]);
 
-  /** === WOOL === persist */
-  useEffect(() => { try { localStorage.setItem(sk(WOOL_DROPS_KEY), JSON.stringify(yarnDrops)); } catch {} }, [yarnDrops, addr]);
-  useEffect(() => {
-    try {
-      localStorage.setItem(sk(WOOL_BAL_KEY), String(woolBalance));
-      localStorage.setItem(sk(WOOL_BAL_SIG_KEY), signNumber(woolBalance, addr));
-    } catch {}
-  }, [woolBalance, addr]);
-  useEffect(() => {
-    try {
-      localStorage.setItem(sk(WOOL_TODAY_KEY), String(woolToday));
-      localStorage.setItem(sk(WOOL_TODAY_SIG_KEY), signNumber(woolToday, addr));
-    } catch {}
-  }, [woolToday, addr]);
-  useEffect(() => { try { localStorage.setItem(sk(WOOL_DAY_KEY), String(woolDay)); } catch {} }, [woolDay, addr]);
-  useEffect(() => { try { localStorage.setItem(sk(WOOL_SCHEDULE_KEY), JSON.stringify(woolSchedule)); } catch {} }, [woolSchedule, addr]);
-  useEffect(() => { try { localStorage.setItem(sk(WOOL_SPAWNED_KEY), JSON.stringify(woolSpawned)); } catch {} }, [woolSpawned, addr]);
-
   /** Evolution */
   useEffect(() => {
     if (formRef.current === "egg" && ageRef.current >= EVOLVE_CHILD_AT) {
@@ -514,13 +437,11 @@ export default function Tamagotchi({
       if (adult) {
         const maybe = onEvolve?.(adult);
         setForm(normalizeForm((maybe || adult) as FormKey));
-        // === WOOL === initialize daily schedule immediately after adulthood
-        ensureWoolDay(currentUtcDay(), /*force*/ true);
       }
     }
   }, [ageMs, form]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** Actions */
+  /** Actions (renamed to avoid global conflicts) */
   const nowMs = () => Date.now();
   const canHeal   = !isDead && nowMs() - lastHealAt   >= HEAL_COOLDOWN_MS;
   const canBurger = !isDead && nowMs() - lastBurgerAt >= FEED_COOLDOWN_MS;
@@ -537,74 +458,43 @@ export default function Tamagotchi({
     });
   }
 
-  /** === WOOL === helpers */
-  function ensureWoolDay(day: number, force = false) {
-    const isAdult = getLifeStage(formRef.current) === "adult";
-    if (!isAdult) return;
-
-    if (force || day !== woolDayRef.current) {
-      // Reset daily counters and schedule
-      setWoolDay(day);
-      setWoolToday(0);
-      setYarnDrops([]);
-      setWoolSpawned([]);
-      const sched = makeWoolSchedule(day, WOOL_DAILY_MAX, isSleepingAt);
-      setWoolSchedule(sched);
-    }
-  }
-
-  function makeWoolSchedule(dayKey: number, count: number, sleepCheck: (ts: number)=>boolean): number[] {
-    // Day bounds in UTC
-    const dayStart = dayKey * 86400_000;
-    const dayEnd = dayStart + 86400_000;
-    // spread across the day avoiding sleep windows
-    const picks: number[] = [];
-    let guard = 0;
-    while (picks.length < count && guard++ < 5000) {
-      const t = randInt(dayStart + 60_000, dayEnd - 60_000);
-      const minute = Math.floor(t / 60_000) * 60_000;
-      if (sleepCheck(minute)) continue;
-      // avoid clustering too close: ≥ 20 minutes apart
-      if (picks.some((p) => Math.abs(p - minute) < 20 * 60_000)) continue;
-      picks.push(minute);
-    }
-    return picks.sort((a, b) => a - b);
-  }
-
-  function spawnYarnOne() {
-    // Respect ground cap and daily max
-    const remain = Math.max(0, WOOL_DAILY_MAX - woolTodayRef.current - yarnRef.current.length);
-    if (remain <= 0) return;
-    setYarnDrops((arr) => {
-      const x = 8 + Math.random() * (LOGICAL_W - 16);
-      const kind = Math.floor(Math.random() * YARN_SRCS.length) | 0;
-      const next = [...arr, { x, kind }];
-      return next.slice(-WOOL_DAILY_MAX);
-    });
-  }
-
-  function collectWool() {
-    if (isDead) return;
-    const ground = yarnRef.current.length;
-    if (ground <= 0) return;
-
-    // Cap collection so daily total never exceeds WOOL_DAILY_MAX
-    const today = woolTodayRef.current;
-    const canTake = Math.max(0, Math.min(ground, WOOL_DAILY_MAX - today));
-    if (canTake <= 0) {
-      // nothing allowed today
-      setYarnDrops([]); // optional: clear visuals
-      return;
-    }
-
-    setYarnDrops((_) => []);
-    setWoolToday((v) => Math.min(WOOL_DAILY_MAX, v + canTake));
-    setWoolBalance((v) => v + canTake);
-
-    window.dispatchEvent(new CustomEvent("wg:wool-updated", {
-      detail: { delta: canTake, total: (woolRef.current ?? 0) + canTake }
-    }));
-  }
+  const actions = {
+    feedBurger: () => {
+      if (!canBurger) return;
+      setStats((s) => clampStats({ ...s,
+        hunger: s.hunger + FEED_EFFECTS.burger.hunger,
+        happiness: s.happiness + FEED_EFFECTS.burger.happiness
+      }));
+      if (Math.random() < 0.7) spawnPoop();
+      setFoodAnim({ kind: "burger", startedAt: nowMs() });
+      setLastBurgerAt(nowMs());
+    },
+    feedCake: () => {
+      if (!canCake) return;
+      setStats((s) => clampStats({ ...s,
+        hunger: s.hunger + FEED_EFFECTS.cake.hunger,
+        happiness: s.happiness + FEED_EFFECTS.cake.happiness
+      }));
+      if (Math.random() < 0.5) spawnPoop();
+      setFoodAnim({ kind: "cake", startedAt: nowMs() });
+      setLastCakeAt(nowMs());
+    },
+    play: () => {
+      if (isDead) return;
+      setStats((s) => clampStats({ ...s, happiness: s.happiness + 0.2, health: Math.min(1, s.health + 0.03) }));
+    },
+    clean: () => {
+      if (!canClean) return;
+      const startX = LOGICAL_W + 10; // enter from right
+      setCleaning({ x: startX, active: true });
+    },
+    heal: () => {
+      if (isDead || !canHeal) return;
+      setIsSick(false);
+      setStats((s) => clampStats({ ...s, health: Math.min(1, s.health + 0.25), happiness: s.happiness + 0.05 }));
+      setLastHealAt(nowMs());
+    },
+  };
 
   /** Reset (used only after new life confirmed) */
   const performReset = () => {
@@ -622,15 +512,6 @@ export default function Tamagotchi({
       localStorage.removeItem(sk(SICK_KEY));
       localStorage.removeItem(sk(DEAD_KEY));
       localStorage.removeItem(sk(DEATH_REASON_KEY));
-      // === WOOL ===
-      localStorage.removeItem(sk(WOOL_BAL_KEY));
-      localStorage.removeItem(sk(WOOL_BAL_SIG_KEY));
-      localStorage.removeItem(sk(WOOL_TODAY_KEY));
-      localStorage.removeItem(sk(WOOL_TODAY_SIG_KEY));
-      localStorage.removeItem(sk(WOOL_DAY_KEY));
-      localStorage.removeItem(sk(WOOL_SCHEDULE_KEY));
-      localStorage.removeItem(sk(WOOL_SPAWNED_KEY));
-      localStorage.removeItem(sk(WOOL_DROPS_KEY));
     } catch {}
     setForm("egg");
     setStats({ cleanliness: 0.9, hunger: 0.65, happiness: 0.6, health: 1.0 });
@@ -643,14 +524,6 @@ export default function Tamagotchi({
     setFoodAnim(null);
     setCleaning(null);
     setLifeSpentForThisDeath(false);
-    // === WOOL ===
-    setWoolBalance(0);
-    setWoolToday(0);
-    setWoolDay(currentUtcDay());
-    setWoolSchedule([]);
-    setWoolSpawned([]);
-    setYarnDrops([]);
-
     const now = Date.now();
     try {
       localStorage.setItem(sk(START_TS_KEY), String(now));
@@ -679,7 +552,7 @@ export default function Tamagotchi({
     return () => window.removeEventListener("wg:nft-confirmed", onConfirmed as any);
   }, []); // once
 
-  /** Drains / online catastrophes + === WOOL === spawns */
+  /** Drains / online catastrophes */
   useEffect(() => {
     let lastWall = Date.now();
     const id = window.setInterval(() => {
@@ -688,35 +561,7 @@ export default function Tamagotchi({
       lastWall = now;
       if (deadRef.current) return;
 
-      // === WOOL === daily reset & schedule init (only for adults)
-      const day = currentUtcDay();
-      if (getLifeStage(formRef.current) === "adult") {
-        ensureWoolDay(day, false);
-
-        // Trigger spawns by schedule
-        const sched = woolScheduleRef.current || [];
-        const spawned = new Set<number>(woolSpawnedRef.current || []);
-        let didNew = false;
-        for (const t of sched) {
-          if (spawned.has(t)) continue;
-          if (now >= t) {
-            // Only spawn if we still have room to reach daily cap
-            const remain = Math.max(0, WOOL_DAILY_MAX - woolTodayRef.current - yarnRef.current.length);
-            if (remain > 0 && !isSleepingAt(now)) {
-              spawnYarnOne();
-              spawned.add(t);
-              didNew = true;
-            } else {
-              // mark as spawned anyway to avoid infinite loop
-              spawned.add(t);
-              didNew = true;
-            }
-          }
-        }
-        if (didNew) setWoolSpawned(Array.from(spawned).sort((a,b)=>a-b));
-      }
-
-      // schedule trigger (catastrophes)
+      // schedule trigger
       try {
         const schedule: number[] = JSON.parse(localStorage.getItem(sk(CATA_SCHEDULE_KEY)) || "[]");
         const consumed: number[] = JSON.parse(localStorage.getItem(sk(CATA_CONSUMED_KEY)) || "[]");
@@ -804,7 +649,7 @@ export default function Tamagotchi({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urls.join("|"), form, yarnDrops.length]); // re-render loop when yarn on ground changes
+  }, [urls.join("|"), form]);
 
   function startLoop(images: Record<string, HTMLImageElement>) {
     const canvas = canvasRef.current;
@@ -843,8 +688,8 @@ export default function Tamagotchi({
     const TURN_COOLDOWN = 160; // ms
     let dir: 1 | -1 = 1;
     let x = 40;
-    let last = performance.now();
     let lastTurnAt = -1e9;
+    let last = performance.now();
     let frameTimer = 0;
 
     const loop = (ts: number) => {
@@ -916,9 +761,11 @@ export default function Tamagotchi({
         const scale = nativeMax > scaleCap ? (scaleCap / nativeMax) : 1;
         const aw = Math.round(av.width * scale);
         const ah = Math.round(av.height * scale);
+
         const padX = 10, padY = 6;
         const ax = LOGICAL_W - padX - aw;
         const ay = padY;
+
         (ctx as any).imageSmoothingEnabled = false;
         ctx.drawImage(av, ax, ay, aw, ah);
 
@@ -952,22 +799,6 @@ export default function Tamagotchi({
         }
       }
 
-      // === WOOL === yarn on ground
-      const curYarn = yarnRef.current;
-      if (curYarn.length) {
-        for (const y of curYarn) {
-          const px = Math.round(y.x);
-          const py = Math.round(LOGICAL_H - BASE_GROUND + EXTRA_DOWN - 10);
-          const spriteSrc = YARN_SRCS[Math.max(0, Math.min(YARN_SRCS.length - 1, y.kind))];
-          const yarnImg = images[spriteSrc];
-          if (yarnImg) ctx.drawImage(yarnImg, px, py - 10, 12, 12);
-          else { ctx.font = "12px monospace"; ctx.fillText("🧶", px, py); }
-        }
-      }
-      if (curYarn.length && !deadUi && !sleepingNow) {
-        drawBanner(ctx, LOGICAL_W, `🧶 Wool ready: ${curYarn.length}`);
-      }
-
       // Choose anim
       const chosenAnim: AnimKey = (() => {
         if (deadUi) return "idle";
@@ -982,6 +813,7 @@ export default function Tamagotchi({
       framesAll = framesAll.filter(Boolean);
       if (!sleepingNow && framesAll.length < 2 && (def.walk?.length ?? 0) >= 2) framesAll = def.walk!;
       const frames = framesAll.filter((u) => !!images[u]);
+
       const base = frames.length ? images[frames[0]] : undefined;
       const rawW = base?.width ?? 32;
       const rawH = base?.height ?? 32;
@@ -995,6 +827,7 @@ export default function Tamagotchi({
       // -------- physics with edge projection + cooldown --------
       const minX = 0;
       const maxX = LOGICAL_W - drawW;
+
       let xNext = x + (dir * WALK_SPEED * dt) / 1000;
       const inTurnCooldown = (ts - lastTurnAt) < TURN_COOLDOWN;
 
@@ -1170,21 +1003,26 @@ export default function Tamagotchi({
           pointerEvents: (isDead || forceDeadPreview) ? ("none" as const) : ("auto" as const),
         }}
       >
-        {/* === WOOL === */}
-        <button className="btn"
-          onClick={collectWool}
-          disabled={isDead || yarnDrops.length===0}
-          title={yarnDrops.length ? "Collect ground WOOL" : "No yarn on ground"}>
-          🧶 WOOL {yarnDrops.length ? `(+${yarnDrops.length})` : ""}
+        <button
+          className="btn"
+          disabled
+          title="Coming soon"
+          style={{ opacity: 0.45, cursor: "not-allowed" }}
+        >
+          🧶 WOOL
         </button>
-        <span className="muted" style={{ alignSelf: "center" }}>WOOL: {woolBalance} / today {woolToday}/{WOOL_DAILY_MAX}</span>
-        {/* ==== */}
 
-        <button className="btn" onClick={act.feedBurger} disabled={burgerLeft>0}>🍔 Burger{burgerLeft>0?` (${Math.ceil(burgerLeft/1000)}s)`:``}</button>
-        <button className="btn" onClick={act.feedCake} disabled={cakeLeft>0}>🍰 Cake{cakeLeft>0?` (${Math.ceil(cakeLeft/1000)}s)`:``}</button>
-        <button className="btn" onClick={act.play}>🎮 Play</button>
-        <button className="btn" onClick={act.heal} disabled={healLeft>0}>💊 Heal{healLeft>0?` (${Math.ceil(healLeft/1000)}s)`:``}</button>
-        <button className="btn" onClick={act.clean}>🧻 Clean</button>
+        <button className="btn" onClick={actions.feedBurger} disabled={burgerLeft>0}>
+          🍔 Burger{burgerLeft>0 ? ` (${Math.ceil(burgerLeft/1000)}s)` : ``}
+        </button>
+        <button className="btn" onClick={actions.feedCake} disabled={cakeLeft>0}>
+          🍰 Cake{cakeLeft>0 ? ` (${Math.ceil(cakeLeft/1000)}s)` : ``}
+        </button>
+        <button className="btn" onClick={actions.play}>🎮 Play</button>
+        <button className="btn" onClick={actions.heal} disabled={healLeft>0}>
+          💊 Heal{healLeft>0 ? ` (${Math.ceil(healLeft/1000)}s)` : ``}
+        </button>
+        <button className="btn" onClick={actions.clean}>🧻 Clean</button>
       </div>
 
       {/* Sleep controls */}
@@ -1358,22 +1196,6 @@ function simulateOffline(args: {
   }
 
   return { stats: clampStats(s), sick, newConsumed: newly, died, deathReason, wasCatastrophe, wasSick: wasSickAtDeath };
-}
-
-/** === WOOL === small integrity helpers (casual tamper resistance) */
-function currentUtcDay(): number { return Math.floor(Date.now() / 86400_000); }
-function hashString(s: string): number {
-  // DJB2-like
-  let h = 5381 | 0;
-  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-  return h >>> 0;
-}
-function signNumber(v: number, address: string): string {
-  const base = `${WOOL_PEPPER}|${address.toLowerCase() || "anon"}|${v}|v2`;
-  return String(hashString(base));
-}
-function verifySignedNumber(v: number, sig: string, address: string): boolean {
-  return sig === signNumber(v, address);
 }
 
 /** Tiny UI atoms */
