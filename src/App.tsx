@@ -19,6 +19,9 @@ import Tamagotchi from "./components/Tamagotchi";
 import VaultPanel from "./components/VaultPanel";
 import "./styles.css";
 
+// === Audio (minimal listeners) ===
+import { audio } from "./audio/AudioManager";
+
 // ===== ENV =====
 const MONAD_CHAIN_ID =
   Number((import.meta as any).env?.VITE_CHAIN_ID ?? 10143) || 10143;
@@ -80,7 +83,6 @@ function useRemoteLives(chainId?: number, address?: string | null) {
         const j = r.ok ? await r.json() : { lives: 0 };
         const v = Number(j?.lives || 0);
         setLives(v);
-        // Broadcast to any listeners (e.g., other tabs/components)
         window.dispatchEvent(
           new CustomEvent("wg:lives-changed", {
             detail: { chainId: chainId ?? MONAD_CHAIN_ID, address, lives: v },
@@ -145,7 +147,7 @@ function AppInner() {
     if (livesFromBackend > 0) setForceGame(false);
   }, [livesFromBackend]);
 
-  // Bridge events: Tamagotchi → App (open Vault); Vault → App (confirmed)
+  // Bridge events
   useEffect(() => {
     const onRequestNft = () => setVaultOpen(true);
     const onConfirmed = () => {
@@ -160,6 +162,33 @@ function AppInner() {
       window.removeEventListener("wg:nft-confirmed", onConfirmed as any);
     };
   }, [address]);
+
+  // === Audio event bridge (minimal, non-breaking) ===
+  useEffect(() => {
+    // Play SFX on feeding
+    const onFeed = () => audio.playEatSfx();
+
+    // Catastrophe toggles:
+    const onCatastrophe = (e: Event) => {
+      const ce = e as CustomEvent;
+      const on = Boolean((ce?.detail as any)?.on);
+      audio.setCatastrophe(on);
+    };
+    const onCatStart = () => audio.setCatastrophe(true);
+    const onCatEnd = () => audio.setCatastrophe(false);
+
+    window.addEventListener("wg:feed", onFeed as any);
+    window.addEventListener("wg:catastrophe", onCatastrophe as any);
+    window.addEventListener("wg:catastrophe-start", onCatStart as any);
+    window.addEventListener("wg:catastrophe-end", onCatEnd as any);
+
+    return () => {
+      window.removeEventListener("wg:feed", onFeed as any);
+      window.removeEventListener("wg:catastrophe", onCatastrophe as any);
+      window.removeEventListener("wg:catastrophe-start", onCatStart as any);
+      window.removeEventListener("wg:catastrophe-end", onCatEnd as any);
+    };
+  }, []);
 
   // Gate:
   const gate: "splash" | "locked" | "game" =
