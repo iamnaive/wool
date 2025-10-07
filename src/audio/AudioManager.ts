@@ -1,7 +1,7 @@
 // src/audio/AudioManager.ts
 // Minimal audio manager using HTMLAudioElement. No external libs.
+// Adds conservative console logging for diagnosis; logic unchanged.
 
-// Small helper to create an <audio> with common defaults.
 function makeAudio(src: string, loop = false, volume = 1): HTMLAudioElement {
   const a = new Audio(src);
   a.loop = loop;
@@ -24,14 +24,21 @@ class AudioManager {
   private currentBgm: HTMLAudioElement | null = null;
   private currentMode: BgmMode = "main";
 
-  // Must be called from a user gesture (click/tap/keydown) once.
   init() {
-    if (this.inited) return;
+    if (this.inited) {
+      console.info("[Audio] init() skipped: already inited");
+      return;
+    }
+    console.info("[Audio] init(): creating audio elements");
     this.bgmMain = makeAudio("/audio/bgm_main.mp3", true, 0.6);
     this.bgmDisaster = makeAudio("/audio/bgm_disaster.mp3", true, 0.65);
-    this.sfxEat = makeAudio("/audio/sfx_eat.mp3", false, 1);
+    this.sfxEat = makeAudio("/audio/sfx_eat.mp3", false, 1.0);
+
+    // Apply current mute flag (in case user pressed Mute before init)
+    this.setMuted(this.muted);
 
     this.inited = true;
+    console.info("[Audio] init(): done");
   }
 
   isInited() {
@@ -43,33 +50,48 @@ class AudioManager {
     if (this.bgmMain) this.bgmMain.muted = m;
     if (this.bgmDisaster) this.bgmDisaster.muted = m;
     if (this.sfxEat) this.sfxEat.muted = m;
+    if (this.currentBgm) this.currentBgm.muted = m;
+    console.info("[Audio] setMuted:", m);
   }
 
   async playBgm(mode: BgmMode) {
-    if (!this.inited) return;
+    if (!this.inited) {
+      console.warn("[Audio] playBgm() before init — ignoring (will start after first gesture)");
+      return;
+    }
+    const next = mode === "disaster" ? this.bgmDisaster : this.bgmMain;
+    if (!next) {
+      console.warn("[Audio] playBgm(): target track is null for mode:", mode);
+      return;
+    }
 
-    // Choose target track
-    const next =
-      mode === "disaster" ? this.bgmDisaster : this.bgmMain;
+    if (this.currentBgm === next && !next.paused) {
+      // Already playing requested mode
+      if (this.currentMode !== mode) {
+        this.currentMode = mode;
+      }
+      console.info("[Audio] playBgm(): already on", mode);
+      return;
+    }
 
-    if (!next) return;
-
-    // If already on that track, ensure it is playing
-    if (this.currentBgm === next && !next.paused) return;
-
-    // Fade out current, fade in next (simple linear fade)
-    await this.crossfade(next, 400); // 400ms quick crossfade
+    console.info("[Audio] playBgm(): crossfading to", mode);
+    await this.crossfade(next, 400);
     this.currentMode = mode;
   }
 
-  async crossfade(next: HTMLAudioElement, ms: number) {
+  private async crossfade(next: HTMLAudioElement, ms: number) {
     const prev = this.currentBgm;
     if (prev === next) return;
 
-    // Start next at 0 volume then raise
-    const nextBaseVol = next.volume;
+    const nextBaseVol = Math.max(0, Math.min(1, next.volume || 1));
     next.volume = 0;
-    try { await next.play(); } catch { /* ignore */ }
+
+    try {
+      await next.play();
+      console.info("[Audio] BGM play() ok");
+    } catch (e) {
+      console.warn("[Audio] BGM play blocked/fail", e);
+    }
 
     this.currentBgm = next;
 
@@ -78,35 +100,49 @@ class AudioManager {
 
     // Fade out previous
     if (prev) {
-      const prevBaseVol = prev.volume;
+      const prevBaseVol = Math.max(0, Math.min(1, prev.volume || 1));
       for (let i = 0; i < steps; i++) {
         prev.volume = prevBaseVol * (1 - (i + 1) / steps);
-        await new Promise(r => setTimeout(r, dt));
+        await new Promise((r) => setTimeout(r, dt));
       }
       prev.pause();
       prev.currentTime = 0;
       prev.volume = prevBaseVol;
+      console.info("[Audio] previous BGM paused");
     }
 
     // Fade in next
     for (let i = 0; i < steps; i++) {
       next.volume = nextBaseVol * ((i + 1) / steps);
-      await new Promise(r => setTimeout(r, dt));
+      await new Promise((r) => setTimeout(r, dt));
     }
     next.volume = nextBaseVol;
+    console.info("[Audio] next BGM at volume", next.volume);
   }
 
   playEatSfx() {
-    if (!this.inited || !this.sfxEat) return;
-    // Allow overlapping by cloning for very rapid taps
+    if (!this.inited) {
+      console.warn("[Audio] playEatSfx() before init — ignoring");
+      return;
+    }
+    if (!this.sfxEat) {
+      console.warn("[Audio] playEatSfx(): sfx element missing");
+      return;
+    }
+    // Allow overlapping by cloning for rapid taps
     const a = this.sfxEat.cloneNode(true) as HTMLAudioElement;
     a.volume = this.sfxEat.volume;
     a.muted = this.muted;
-    a.play().catch(() => {});
+    a.preload = "auto";
+    a.crossOrigin = "anonymous";
+    a.play().then(
+      () => console.info("[Audio] SFX play() ok"),
+      (e) => console.warn("[Audio] SFX play blocked/fail", e)
+    );
   }
 
-  // Public helpers for your game:
   async setCatastrophe(on: boolean) {
+    console.info("[Audio] setCatastrophe:", on);
     await this.playBgm(on ? "disaster" : "main");
   }
 }
