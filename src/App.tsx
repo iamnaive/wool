@@ -196,6 +196,14 @@ function AppInner() {
                 {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "—"}
               </span>
               <span className="pill">Chain: {chainId ?? "—"}</span>
+              <span className="pill">Lives: {livesCount}</span>
+              <button
+                className="btn btn-primary"
+                onClick={() => setVaultOpen(true)}
+                style={{ marginLeft: 8 }}
+              >
+                Send NFT (+1 life)
+              </button>
               <button className="btn ghost" onClick={() => disconnect()}>
                 Disconnect
               </button>
