@@ -1,6 +1,6 @@
 // src/audio/AudioManager.ts
 // Minimal audio manager using HTMLAudioElement. No external libs.
-// Adds conservative console logging for diagnosis; logic unchanged.
+// Adds lazy init on first user-triggered call + conservative logging.
 
 function makeAudio(src: string, loop = false, volume = 1): HTMLAudioElement {
   const a = new Audio(src);
@@ -24,6 +24,7 @@ class AudioManager {
   private currentBgm: HTMLAudioElement | null = null;
   private currentMode: BgmMode = "main";
 
+  /** explicit init (kept for AudioProvider) */
   init() {
     if (this.inited) {
       console.info("[Audio] init() skipped: already inited");
@@ -34,11 +35,19 @@ class AudioManager {
     this.bgmDisaster = makeAudio("/audio/bgm_disaster.mp3", true, 0.65);
     this.sfxEat = makeAudio("/audio/sfx_eat.mp3", false, 1.0);
 
-    // Apply current mute flag (in case user pressed Mute before init)
+    // apply mute state if toggled earlier
     this.setMuted(this.muted);
 
     this.inited = true;
     console.info("[Audio] init(): done");
+  }
+
+  /** ensure init if call came from a user gesture (e.g., click) */
+  private ensureInitFromGesture() {
+    if (!this.inited) {
+      // If this runs inside an event handler (click/keydown), autoplay policy is satisfied.
+      this.init();
+    }
   }
 
   isInited() {
@@ -55,8 +64,11 @@ class AudioManager {
   }
 
   async playBgm(mode: BgmMode) {
+    // lazy init to handle cases when AudioProvider didn't arm yet
+    this.ensureInitFromGesture();
+
     if (!this.inited) {
-      console.warn("[Audio] playBgm() before init — ignoring (will start after first gesture)");
+      console.warn("[Audio] playBgm(): still not inited (no gesture?)");
       return;
     }
     const next = mode === "disaster" ? this.bgmDisaster : this.bgmMain;
@@ -66,10 +78,7 @@ class AudioManager {
     }
 
     if (this.currentBgm === next && !next.paused) {
-      // Already playing requested mode
-      if (this.currentMode !== mode) {
-        this.currentMode = mode;
-      }
+      if (this.currentMode !== mode) this.currentMode = mode;
       console.info("[Audio] playBgm(): already on", mode);
       return;
     }
@@ -121,16 +130,18 @@ class AudioManager {
   }
 
   playEatSfx() {
+    // lazy init to handle first click on Feed button
+    this.ensureInitFromGesture();
+
     if (!this.inited) {
-      console.warn("[Audio] playEatSfx() before init — ignoring");
+      console.warn("[Audio] playEatSfx(): still not inited (no gesture?)");
       return;
     }
     if (!this.sfxEat) {
       console.warn("[Audio] playEatSfx(): sfx element missing");
       return;
     }
-    // Allow overlapping by cloning for rapid taps
-    const a = this.sfxEat.cloneNode(true) as HTMLAudioElement;
+    const a = this.sfxEat.cloneNode(true) as HTMLAudioElement; // allow overlaps
     a.volume = this.sfxEat.volume;
     a.muted = this.muted;
     a.preload = "auto";
