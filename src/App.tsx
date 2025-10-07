@@ -103,6 +103,13 @@ function AppInner() {
   const { connect, connectors, status: connectStatus } = useConnect();
   const { disconnect } = useDisconnect();
 
+  // Keep last non-null address to preserve the game on disconnect
+  // and force remount only when wallet actually changes.
+  const [activeAddr, setActiveAddr] = useState<string | null>(null);
+  useEffect(() => {
+    if (address) setActiveAddr(address);
+  }, [address]);
+
   // Wallet picker modal
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickWallet = async (connectorId: string) => {
@@ -169,6 +176,11 @@ function AppInner() {
     }
   }, [gate]);
 
+  // Stable key per (chainId + wallet) to remount on wallet switch only.
+  const tamagotchiKey = `wg-${String(chainId ?? MONAD_CHAIN_ID)}-${String(
+    (activeAddr || "anon").toLowerCase()
+  )}`;
+
   return (
     <div className="page">
       <header className="topbar">
@@ -232,14 +244,20 @@ function AppInner() {
       {/* Locked (no lives) — render Tamagotchi to show dead sprite & overlay */}
       {gate === "locked" && (
         <div style={{ maxWidth: 980, margin: "0 auto" }}>
-          <Tamagotchi />
+          <Tamagotchi
+            key={tamagotchiKey}
+            walletAddress={activeAddr || undefined}
+          />
         </div>
       )}
 
       {/* Game stays mounted even if wallet disconnects */}
       {gate === "game" && (
         <div style={{ maxWidth: 980, margin: "0 auto" }}>
-          <Tamagotchi />
+          <Tamagotchi
+            key={tamagotchiKey}
+            walletAddress={activeAddr || undefined}
+          />
         </div>
       )}
 
