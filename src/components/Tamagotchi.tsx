@@ -48,7 +48,7 @@ const SLEEP_FROM_KEY = "sleep_from_v1";
 const SLEEP_TO_KEY = "sleep_to_v1";
 const CATA_SCHEDULE_KEY = "cata_schedule_v2";
 const CATA_CONSUMED_KEY = "cata_consumed_v2";
-const CATA_ACTIVE_KEY = "cata_active_v1"; // <— persist active catastrophe across evolution
+const CATA_ACTIVE_KEY = "cata_active_v1"; // persist active catastrophe across evolution
 const FORM_KEY = "form_v1";
 const STATS_KEY = "stats_v1";
 const SICK_KEY = "sick_v1";
@@ -212,7 +212,6 @@ export default function Tamagotchi({
       window.removeEventListener("wg:new-game", onNewGame as any);
     };
   }, []);
-  // auto-clear preview when lives restored via props
   useEffect(() => {
     if ((lives || 0) > 0) setForceDeadPreview(false);
   }, [lives]);
@@ -467,6 +466,8 @@ export default function Tamagotchi({
       if (Math.random() < 0.7) spawnPoop();
       setFoodAnim({ kind: "burger", startedAt: nowMs() });
       setLastBurgerAt(nowMs());
+      // AUDIO: trigger eat SFX
+      try { window.dispatchEvent(new CustomEvent("wg:feed")); } catch {}
     },
     feedCake: () => {
       if (!canCake) return;
@@ -477,6 +478,8 @@ export default function Tamagotchi({
       if (Math.random() < 0.5) spawnPoop();
       setFoodAnim({ kind: "cake", startedAt: nowMs() });
       setLastCakeAt(nowMs());
+      // AUDIO: trigger eat SFX
+      try { window.dispatchEvent(new CustomEvent("wg:feed")); } catch {}
     },
     play: () => {
       if (isDead) return;
@@ -572,6 +575,11 @@ export default function Tamagotchi({
               setCatastrophe(active);
               localStorage.setItem(sk(CATA_ACTIVE_KEY), JSON.stringify(active)); // persist
               localStorage.setItem(sk(CATA_CONSUMED_KEY), JSON.stringify([...consumed, t].sort((a,b)=>a-b)));
+              // AUDIO: catastrophe start
+              try {
+                window.dispatchEvent(new CustomEvent("wg:catastrophe-start"));
+                window.dispatchEvent(new CustomEvent("wg:catastrophe", { detail: { on: true } }));
+              } catch {}
             }
           } else if (now >= t + CATA_DURATION_MS) {
             if (!consumed.includes(t) && !isSleepingAt(t)) {
@@ -590,6 +598,17 @@ export default function Tamagotchi({
           else localStorage.removeItem(sk(CATA_ACTIVE_KEY));
         }
       } catch {}
+
+      // explicit end transition: when active until has passed
+      const curCat = catastropheRef.current;
+      if (curCat && now >= (curCat.until ?? 0)) {
+        setCatastrophe(null);
+        // AUDIO: catastrophe end
+        try {
+          window.dispatchEvent(new CustomEvent("wg:catastrophe-end"));
+          window.dispatchEvent(new CustomEvent("wg:catastrophe", { detail: { on: false } }));
+        } catch {}
+      }
 
       const sleeping = isSleepingAt(now);
       if (!sleeping && dt > 0) {
@@ -903,10 +922,10 @@ export default function Tamagotchi({
       ctx.restore();
       const cat = catastropheRef.current;
 
-      // NEW: subtle red flash overlay during catastrophe (no logic changes)
+      // subtle red flash overlay during catastrophe (no logic changes)
       if (cat && nowAbs < cat.until && !deadUi) {
         const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 160);
-        const alpha = 0.05 + 0.10 * pulse; // ~0.05..0.15
+        const alpha = 0.05 + 0.10 * pulse;
         ctx.save();
         ctx.fillStyle = `rgba(255,0,0,${alpha})`;
         ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
@@ -1198,7 +1217,7 @@ function Bar({ label, value, h = 6 }: { label: string; value: number; h?: number
     <div>
       <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4 }}>{label}</div>
       <div style={{ height: h, width: "100%", borderRadius: Math.max(6, h), background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
-        <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg, rgba(124,77,255,0.9), rgba(0,200,255,0.9))" }} />
+        <div style={{ width: `${pct}%`, height: "100%" }} className="bar-fill" />
       </div>
     </div>
   );
