@@ -1008,7 +1008,7 @@ export default function Tamagotchi({
           title="Coming soon"
           style={{ opacity: 0.45, cursor: "not-allowed" }}
         >
-          🧶 $WOOL
+          🧶 WOOL
         </button>
 
         <button className="btn" onClick={act.feedBurger} disabled={burgerLeft>0}>🍔 Burger{burgerLeft>0?` (${Math.ceil(burgerLeft/1000)}s)`:``}</button>
