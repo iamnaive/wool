@@ -21,6 +21,7 @@ import "./styles.css";
 
 // === Audio (minimal listeners) ===
 import { audio } from "./audio/AudioManager";
+import { MuteButton } from "./audio/MuteButton"; // ← добавлено
 
 // ===== ENV =====
 const MONAD_CHAIN_ID =
@@ -163,12 +164,9 @@ function AppInner() {
     };
   }, [address]);
 
-  // === Audio event bridge (minimal, non-breaking) ===
+  // === Audio event bridge (unchanged) ===
   useEffect(() => {
-    // Play SFX on feeding
     const onFeed = () => audio.playEatSfx();
-
-    // Catastrophe toggles:
     const onCatastrophe = (e: Event) => {
       const ce = e as CustomEvent;
       const on = Boolean((ce?.detail as any)?.on);
@@ -219,6 +217,9 @@ function AppInner() {
         </div>
 
         <div className="walletRow">
+          {/* ← Mute on the top bar */}
+          <MuteButton />
+
           {isConnected ? (
             <>
               <span className="pill">
