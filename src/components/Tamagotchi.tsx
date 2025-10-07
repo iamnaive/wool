@@ -4,7 +4,7 @@ import { catalog, type FormKey, type AnimSet as AnyAnimSet } from "../game/catal
 /** ===== Constants ===== */
 const DEAD_FALLBACK = "/sprites/dead.png";
 const NFT_CONTRACT = "0x88c78d5852f45935324c6d100052958f694e8446";
-const CATA_ACTIVE_KEY = "cata_active_v1"
+
 /** HUD / food */
 const AVATAR_SCALE_CAP: number | null = 42;
 const FOOD_FRAME_MAX_PX = 42;
@@ -48,6 +48,7 @@ const SLEEP_FROM_KEY = "sleep_from_v1";
 const SLEEP_TO_KEY = "sleep_to_v1";
 const CATA_SCHEDULE_KEY = "cata_schedule_v2";
 const CATA_CONSUMED_KEY = "cata_consumed_v2";
+const CATA_ACTIVE_KEY = "cata_active_v1"; // <— persist active catastrophe across evolution
 const FORM_KEY = "form_v1";
 const STATS_KEY = "stats_v1";
 const SICK_KEY = "sick_v1";
@@ -61,8 +62,7 @@ const MAX_W = 720, CANVAS_H = 360;
 const BAR_H = 6, BASE_GROUND = 48, Y_SHIFT = 26;
 
 /** Vertical adjustments */
-const EXTRA_DOWN = 10;      // poops & scoop lower
-
+const EXTRA_DOWN = 10;
 const PET_RAISE  = 1;
 
 const HEAL_COOLDOWN_MS = 60_000;
@@ -179,29 +179,6 @@ export default function Tamagotchi({
 
   // catastrophe
   const [catastrophe, setCatastrophe] = useState<Catastrophe | null>(null);
-// Persist active catastrophe (so evolution/render restarts won't drop it)
-useEffect(() => {
-  try {
-    const now = Date.now();
-    if (catastrophe && now < (catastrophe.until ?? 0)) {
-      localStorage.setItem(sk(CATA_ACTIVE_KEY), JSON.stringify(catastrophe));
-    } else {
-      localStorage.removeItem(sk(CATA_ACTIVE_KEY));
-    }
-  } catch {}
-}, [catastrophe]);
-
-// Rehydrate catastrophe after evolution (form change) or on mount
-useEffect(() => {
-  try {
-    const raw = localStorage.getItem(sk(CATA_ACTIVE_KEY));
-    if (!raw) return;
-    const saved = JSON.parse(raw) as Catastrophe | null;
-    const stillActive = saved && Date.now() < (saved.until ?? 0);
-    if (stillActive) setCatastrophe(saved!);
-    else localStorage.removeItem(sk(CATA_ACTIVE_KEY));
-  } catch {}
-}, [form]);
 
   /** Refs */
   const animRef = useLatest(anim);
@@ -218,33 +195,28 @@ useEffect(() => {
   const sleepParamsRef = useRef({ useAutoTime, sleepStart, wakeTime, sleepLocked });
   useEffect(() => { sleepParamsRef.current = { useAutoTime, sleepStart, wakeTime, sleepLocked }; }, [useAutoTime, sleepStart, wakeTime, sleepLocked]);
 
-  // ------- NEW: force-dead preview (to show dead sprite after offline death) -------
+  // ------- Force-dead preview (to show dead sprite after offline death) -------
   const [forceDeadPreview, setForceDeadPreview] = useState(false);
   const forceDeadPreviewRef = useLatest(forceDeadPreview);
   useEffect(() => {
-  const onForce = () => {
-    // показываем мёртвого только если питомец реально уже "жил" раньше
-    const hadHistory =
-      !!localStorage.getItem(sk(START_TS_KEY)) || (ageRef.current ?? 0) > 0;
-    if (!deadRef.current && hadHistory) {
-      setForceDeadPreview(true);
-    }
-  };
-  const onNewGame = () => setForceDeadPreview(false);
-
-  window.addEventListener("wg:force-dead-preview", onForce as any);
-  window.addEventListener("wg:new-game", onNewGame as any);
-  return () => {
-    window.removeEventListener("wg:force-dead-preview", onForce as any);
-    window.removeEventListener("wg:new-game", onNewGame as any);
-  };
-}, []);
-
-  // auto-clear preview when lives restored via props (if ты пробрасываешь lives сюда)
+    const onForce = () => {
+      const hadHistory =
+        !!localStorage.getItem(sk(START_TS_KEY)) || (ageRef.current ?? 0) > 0;
+      if (!deadRef.current && hadHistory) setForceDeadPreview(true);
+    };
+    const onNewGame = () => setForceDeadPreview(false);
+    window.addEventListener("wg:force-dead-preview", onForce as any);
+    window.addEventListener("wg:new-game", onNewGame as any);
+    return () => {
+      window.removeEventListener("wg:force-dead-preview", onForce as any);
+      window.removeEventListener("wg:new-game", onNewGame as any);
+    };
+  }, []);
+  // auto-clear preview when lives restored via props
   useEffect(() => {
     if ((lives || 0) > 0) setForceDeadPreview(false);
   }, [lives]);
-  // -------------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
 
   /** Canvas & RAF */
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -317,7 +289,7 @@ useEffect(() => {
     return afterStart && beforeWake;
   }
 
-  /** Catastrophe schedule (first shifted out of sleep if needed) */
+  /** Catastrophe schedule (first in 30s, shifted out of sleep if needed) */
   useEffect(() => {
     try {
       const schedRaw = localStorage.getItem(sk(CATA_SCHEDULE_KEY));
@@ -325,7 +297,7 @@ useEffect(() => {
       let schedule: number[] = schedRaw ? JSON.parse(schedRaw) : [];
       const consumed: number[] = consumedRaw ? JSON.parse(consumedRaw) : [];
 
-      // CHANGED: first catastrophe after 30s (was 60s)
+      // first catastrophe after 30s (was 60s)
       let firstAt = startTs + 30_000;
       if (isSleepingAt(firstAt)) {
         const maxShiftMins = 180;
@@ -523,7 +495,7 @@ useEffect(() => {
     },
   };
 
-  /** Reset (used only после получения новой жизни) */
+  /** Reset (used only after new life confirmed) */
   const performReset = () => {
     try {
       localStorage.removeItem(sk(START_TS_KEY));
@@ -533,6 +505,7 @@ useEffect(() => {
       localStorage.removeItem(sk(POOPS_KEY));
       localStorage.removeItem(sk(CATA_SCHEDULE_KEY));
       localStorage.removeItem(sk(CATA_CONSUMED_KEY));
+      localStorage.removeItem(sk(CATA_ACTIVE_KEY));
       localStorage.removeItem(sk(FORM_KEY));
       localStorage.removeItem(sk(STATS_KEY));
       localStorage.removeItem(sk(SICK_KEY));
@@ -560,16 +533,16 @@ useEffect(() => {
     window.dispatchEvent(new CustomEvent("wg:new-game"));
   };
 
-  /** Смерть: списываем жизнь ОДИН раз, но НЕ перезапускаем игру автоматически */
+  /** Spend life once on death */
   useEffect(() => {
     if (isDead && !lifeSpentForThisDeath) {
-      onLoseLife?.();                   // жизнь списывается (если была)
-      setLifeSpentForThisDeath(true);   // повторно не списываем
+      onLoseLife?.();
+      setLifeSpentForThisDeath(true);
       window.dispatchEvent(new CustomEvent("wg:pet-dead"));
     }
   }, [isDead]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** Когда пришла новая жизнь из VaultPanel (wg:nft-confirmed) — сразу начинаем новый раунд */
+  /** When new life confirmed → reset */
   useEffect(() => {
     const onConfirmed = () => {
       if (deadRef.current) performReset();
@@ -595,7 +568,9 @@ useEffect(() => {
           if (consumed.includes(t)) continue;
           if (now >= t && now < t + CATA_DURATION_MS) {
             if (!isSleepingAt(now)) {
-              setCatastrophe({ cause: pickOne(CATASTROPHE_CAUSES), until: t + CATA_DURATION_MS });
+              const active = { cause: pickOne(CATASTROPHE_CAUSES), until: t + CATA_DURATION_MS };
+              setCatastrophe(active);
+              localStorage.setItem(sk(CATA_ACTIVE_KEY), JSON.stringify(active)); // persist
               localStorage.setItem(sk(CATA_CONSUMED_KEY), JSON.stringify([...consumed, t].sort((a,b)=>a-b)));
             }
           } else if (now >= t + CATA_DURATION_MS) {
@@ -603,6 +578,16 @@ useEffect(() => {
               localStorage.setItem(sk(CATA_CONSUMED_KEY), JSON.stringify([...consumed, t].sort((a,b)=>a-b)));
             }
           }
+        }
+      } catch {}
+
+      // rehydrate persisted catastrophe if still active (covers evolution)
+      try {
+        const raw = localStorage.getItem(sk(CATA_ACTIVE_KEY));
+        if (raw) {
+          const saved = JSON.parse(raw) as Catastrophe;
+          if (saved && now < (saved.until ?? 0)) setCatastrophe(saved);
+          else localStorage.removeItem(sk(CATA_ACTIVE_KEY));
         }
       } catch {}
 
@@ -701,8 +686,8 @@ useEffect(() => {
     const EDGE_EPS = 2;
     const TURN_COOLDOWN = 160; // ms
     let dir: 1 | -1 = 1;
-    let x = 40;                // float pos
-    let lastTurnAt = -1e9;     // perf ts
+    let x = 40;
+    let lastTurnAt = -1e9;
     let last = performance.now();
     let frameTimer = 0;
 
@@ -755,7 +740,7 @@ useEffect(() => {
       const nowAbs = Date.now();
       const sleepingNow = isSleepingAt(nowAbs);
 
-      // NEW: effective "dead" for UI (real death OR forced preview)
+      // effective "dead" for UI (real death OR forced preview)
       const deadUi = deadRef.current || forceDeadPreviewRef.current;
 
       const avatarAnimKey: AnimKey = (() => {
@@ -783,7 +768,6 @@ useEffect(() => {
         (ctx as any).imageSmoothingEnabled = false;
         ctx.drawImage(av, ax, ay, aw, ah);
 
-        // HP label BELOW the avatar (no overlap)
         const hp = Math.round((statsRef.current.health ?? 0) * 100);
         const label = `❤️ ${hp}%`;
         ctx.font = "10px monospace";
@@ -915,9 +899,20 @@ useEffect(() => {
         }
       }
 
-      // Banners
+      // Banners & catastrophe FX
       ctx.restore();
       const cat = catastropheRef.current;
+
+      // NEW: subtle red flash overlay during catastrophe (no logic changes)
+      if (cat && nowAbs < cat.until && !deadUi) {
+        const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 160);
+        const alpha = 0.05 + 0.10 * pulse; // ~0.05..0.15
+        ctx.save();
+        ctx.fillStyle = `rgba(255,0,0,${alpha})`;
+        ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+        ctx.restore();
+      }
+
       if (cat && nowAbs < cat.until) {
         drawBanner(ctx, LOGICAL_W, `⚠ ${cat.cause}! stats draining fast`);
       }
@@ -947,7 +942,7 @@ useEffect(() => {
   /** Clipboard helper */
   const copyAddr = async () => { try { await navigator.clipboard.writeText(NFT_CONTRACT); } catch {} };
 
-  /** Death overlay (CTA → откроет модал VaultPanel в App через wg:request-nft) */
+  /** Death overlay */
   const DeathOverlay = (isDead || forceDeadPreview) ? (
     <OverlayCard>
       <div style={{ fontSize: 18, marginBottom: 6 }}>Your pet has died</div>
@@ -1003,19 +998,17 @@ useEffect(() => {
       <div
         style={{
           marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center",
-          // NEW: disable UI also for forced dead preview
           opacity: (isDead || forceDeadPreview) ? 0.5 : 1,
           pointerEvents: (isDead || forceDeadPreview) ? ("none" as const) : ("auto" as const),
         }}
       >
-        {/* ⬇️ эта кнопка как была, просто оставляю для контекста */}
         <button
           className="btn"
           disabled
           title="Coming soon"
           style={{ opacity: 0.45, cursor: "not-allowed" }}
         >
-          🧶 WOOL
+          🧶 $WOOL
         </button>
 
         <button className="btn" onClick={act.feedBurger} disabled={burgerLeft>0}>🍔 Burger{burgerLeft>0?` (${Math.ceil(burgerLeft/1000)}s)`:``}</button>
@@ -1096,38 +1089,20 @@ async function loadImageSafe(src: string): Promise<{ src: string; img: HTMLImage
 }
 function drawBanner(ctx: CanvasRenderingContext2D, width: number, text: string) {
   ctx.save();
-
-  // Стиль текста баннера
   ctx.font = "14px monospace";
   ctx.textBaseline = "middle";
-
-  // Паддинги
-  const padX = 8;
-  const padY = 4;
-
-  // Замеряем размеры текста
+  const padX = 8, padY = 4;
   const m = ctx.measureText(text);
   const textW = Math.ceil(m.width);
-  const textH = Math.ceil(
-    (m.actualBoundingBoxAscent ?? 10) + (m.actualBoundingBoxDescent ?? 4)
-  );
-
-  // Размеры и позиция подложки
+  const textH = Math.ceil((m.actualBoundingBoxAscent ?? 10) + (m.actualBoundingBoxDescent ?? 4));
   const bw = textW + padX * 2;
   const bh = textH + padY * 2;
-
-  // Центрируем по ширине, фиксируем отступ сверху в мире
   const x = Math.round((width - bw) / 2);
-  const y = 10; // можно подвинуть, если нужно ниже/выше
-
-  // Подложка
+  const y = 10;
   ctx.fillStyle = "rgba(0,0,0,0.55)";
   ctx.fillRect(x, y, bw, bh);
-
-  // Текст по центру подложки по вертикали
   ctx.fillStyle = "#fff";
   ctx.fillText(text, x + padX, y + bh / 2);
-
   ctx.restore();
 }
 
