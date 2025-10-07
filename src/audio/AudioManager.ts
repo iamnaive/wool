@@ -1,6 +1,6 @@
 // src/audio/AudioManager.ts
 // Minimal audio manager using HTMLAudioElement. No external libs.
-// Adds lazy init on first user-triggered call + conservative logging.
+// Lazy init on first user gesture + auto-start main BGM if idle.
 
 function makeAudio(src: string, loop = false, volume = 1): HTMLAudioElement {
   const a = new Audio(src);
@@ -24,7 +24,6 @@ class AudioManager {
   private currentBgm: HTMLAudioElement | null = null;
   private currentMode: BgmMode = "main";
 
-  /** explicit init (kept for AudioProvider) */
   init() {
     if (this.inited) {
       console.info("[Audio] init() skipped: already inited");
@@ -35,18 +34,31 @@ class AudioManager {
     this.bgmDisaster = makeAudio("/audio/bgm_disaster.mp3", true, 0.65);
     this.sfxEat = makeAudio("/audio/sfx_eat.mp3", false, 1.0);
 
-    // apply mute state if toggled earlier
+    // respect current mute state
     this.setMuted(this.muted);
 
     this.inited = true;
     console.info("[Audio] init(): done");
   }
 
-  /** ensure init if call came from a user gesture (e.g., click) */
-  private ensureInitFromGesture() {
-    if (!this.inited) {
-      // If this runs inside an event handler (click/keydown), autoplay policy is satisfied.
-      this.init();
+  /** ensure init if called from a user gesture; also auto-start main bgm if nothing is playing */
+  private async ensureInitAndNudgeBgm() {
+    const wasInited = this.inited;
+    if (!this.inited) this.init();
+
+    // If after init nothing is playing, start main bgm once.
+    if (this.inited) {
+      const playing =
+        this.currentBgm && !this.currentBgm.paused && !this.currentBgm.ended;
+      if (!playing) {
+        // If catastrophe later switches mode, crossfade will handle it
+        try {
+          await this.playBgm("main");
+          if (!wasInited) console.info("[Audio] auto-started main BGM");
+        } catch (e) {
+          console.warn("[Audio] auto-start main BGM failed", e);
+        }
+      }
     }
   }
 
@@ -64,11 +76,11 @@ class AudioManager {
   }
 
   async playBgm(mode: BgmMode) {
-    // lazy init to handle cases when AudioProvider didn't arm yet
-    this.ensureInitFromGesture();
+    // make sure we're inited (click/keydown context satisfies autoplay)
+    if (!this.inited) await this.ensureInitAndNudgeBgm();
 
     if (!this.inited) {
-      console.warn("[Audio] playBgm(): still not inited (no gesture?)");
+      console.warn("[Audio] playBgm(): not inited (no user gesture yet?)");
       return;
     }
     const next = mode === "disaster" ? this.bgmDisaster : this.bgmMain;
@@ -129,12 +141,12 @@ class AudioManager {
     console.info("[Audio] next BGM at volume", next.volume);
   }
 
-  playEatSfx() {
-    // lazy init to handle first click on Feed button
-    this.ensureInitFromGesture();
+  async playEatSfx() {
+    // first feed click should also arm audio and start bgm if idle
+    await this.ensureInitAndNudgeBgm();
 
     if (!this.inited) {
-      console.warn("[Audio] playEatSfx(): still not inited (no gesture?)");
+      console.warn("[Audio] playEatSfx(): not inited (no user gesture?)");
       return;
     }
     if (!this.sfxEat) {
