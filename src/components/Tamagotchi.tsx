@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { catalog, type FormKey, type AnimSet as AnyAnimSet } from "../game/catalog";
 
 /** ===== Constants ===== */
@@ -316,7 +316,7 @@ export default function Tamagotchi({
         while (picks.length < need && guard++ < 2000) {
           const t = randInt(day1, day2 - CATA_DURATION_MS);
           const minute = Math.floor(t / 60_000) * 60_000;
-          if (isSleepingAt(minute)) continue;
+          if (isSleepingAt(t)) continue;
           if (schedule.includes(minute) || picks.includes(minute)) continue;
           picks.push(minute);
         }
@@ -650,7 +650,7 @@ export default function Tamagotchi({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** ===== Render loop (single RAF) ===== */
-  useEffect(() => {
+  useLayoutEffect(() => {
     let alive = true;
     const urlsFull = Array.from(new Set([...urls, BG_SRC]));
     Promise.all(urlsFull.map(loadImageSafe)).then((pairs) => {
@@ -700,6 +700,8 @@ export default function Tamagotchi({
     if ("ResizeObserver" in window) { ro = new (window as any).ResizeObserver(resize); ro.observe(wrap); }
     else { window.addEventListener("resize", resize); }
     resize();
+    // Settle passes: catch late reflow (fonts/scrollbar) before first interaction
+    requestAnimationFrame(() => { resize(); setTimeout(() => resize(), 0); });
 
     // ---- Motion vars ----
     const EDGE_EPS = 2;
