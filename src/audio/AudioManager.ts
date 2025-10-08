@@ -30,9 +30,9 @@ class AudioManager {
       return;
     }
     console.info("[Audio] init(): creating audio elements");
-    this.bgmMain = makeAudio("/audio/bgm_main.mp3", true, 0.6);
-    this.bgmDisaster = makeAudio("/audio/bgm_disaster.mp3", true, 0.65);
-    this.sfxEat = makeAudio("/audio/sfx_eat.mp3", false, 1.0);
+    this.bgmMain = makeAudio("/audio/bgm_main.mp3", true, 0.5);
+    this.bgmDisaster = makeAudio("/audio/bgm_disaster.mp3", true, 0.25);
+    this.sfxEat = makeAudio("/audio/sfx_eat.mp3", false, 0.3);
 
     // respect current mute state
     this.setMuted(this.muted);
