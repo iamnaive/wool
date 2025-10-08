@@ -1,5 +1,5 @@
 // src/App.tsx
-// Keep game mounted on wallet disconnect; show dead sprite on offline death.
+// Gate fixes: reset on wallet switch + address-scoped NFT confirmations.
 // Comments: English only.
 
 import React, { useEffect, useState } from "react";
@@ -21,7 +21,7 @@ import "./styles.css";
 
 // === Audio (minimal listeners) ===
 import { audio } from "./audio/AudioManager";
-import { MuteButton } from "./audio/MuteButton"; // ← добавлено
+import { MuteButton } from "./audio/MuteButton";
 
 // ===== ENV =====
 const MONAD_CHAIN_ID =
@@ -67,7 +67,7 @@ const config = createConfig({
   transports: { [MONAD.id]: http(RPC_URL) },
 });
 
-// ===== Optional: small poller for authoritative lives =====
+// ===== Optional: polling authoritative lives =====
 function useRemoteLives(chainId?: number, address?: string | null) {
   const [lives, setLives] = useState(0);
   useEffect(() => {
@@ -106,8 +106,7 @@ function AppInner() {
   const { connect, connectors, status: connectStatus } = useConnect();
   const { disconnect } = useDisconnect();
 
-  // Keep last non-null address to preserve the game on disconnect
-  // and force remount only when wallet actually changes.
+  // Keep last non-null address to preserve game key between reconnects
   const [activeAddr, setActiveAddr] = useState<string | null>(null);
   useEffect(() => {
     if (address) setActiveAddr(address);
@@ -135,10 +134,10 @@ function AppInner() {
     if (isConnected) setKeepGameMounted(true);
   }, [isConnected]);
 
-  // Lives from backend poller
+  // Lives from backend
   const livesFromBackend = useRemoteLives(chainId, address);
 
-  // UI lives + force flag so we don't show "Send NFT" again after confirm
+  // UI lives + force flag
   const [livesCount, setLivesCount] = useState(0);
   const [forceGame, setForceGame] = useState(false);
 
@@ -148,14 +147,30 @@ function AppInner() {
     if (livesFromBackend > 0) setForceGame(false);
   }, [livesFromBackend]);
 
+  // --- CRITICAL FIX 1: reset flags on wallet/chain change ---
+  useEffect(() => {
+    // When switching wallet or chain, clear optimistic state & close vault
+    setForceGame(false);
+    setLivesCount(0);
+    setVaultOpen(false);
+  }, [address, chainId]);
+  // ----------------------------------------------------------
+
   // Bridge events
   useEffect(() => {
     const onRequestNft = () => setVaultOpen(true);
-    const onConfirmed = () => {
+
+    // --- CRITICAL FIX 2: scope confirm to current wallet address ---
+    const onConfirmed = (e: Event) => {
+      const ce = e as CustomEvent;
+      const evAddr = String((ce?.detail as any)?.address || "").toLowerCase();
+      const cur = String(address || "").toLowerCase();
+      if (!evAddr || !cur || evAddr !== cur) return; // ignore foreign confirmations
       setVaultOpen(false);
       setForceGame(true);
       setLivesCount((prev) => (prev > 0 ? prev : 1));
     };
+
     window.addEventListener("wg:request-nft", onRequestNft as any);
     window.addEventListener("wg:nft-confirmed", onConfirmed as any);
     return () => {
@@ -189,6 +204,9 @@ function AppInner() {
   }, []);
 
   // Gate:
+  // - "splash": not connected and never connected before
+  // - "locked": connected, but no lives and no optimistic confirm
+  // - "game":   has lives OR optimistic confirm
   const gate: "splash" | "locked" | "game" =
     !isConnected && !keepGameMounted
       ? "splash"
@@ -196,14 +214,7 @@ function AppInner() {
       ? "game"
       : "locked";
 
-  // Force dead preview inside Tamagotchi when locked (offline death UX)
-  useEffect(() => {
-    if (gate === "locked") {
-      window.dispatchEvent(new CustomEvent("wg:force-dead-preview"));
-    }
-  }, [gate]);
-
-  // Stable key per (chainId + wallet) to remount on wallet switch only.
+  // Stable key per (chainId + wallet) to remount on wallet switch only
   const tamagotchiKey = `wg-${String(chainId ?? MONAD_CHAIN_ID)}-${String(
     (activeAddr || "anon").toLowerCase()
   )}`;
@@ -217,7 +228,6 @@ function AppInner() {
         </div>
 
         <div className="walletRow">
-          {/* ← Mute on the top bar */}
           <MuteButton />
 
           {isConnected ? (
@@ -263,7 +273,7 @@ function AppInner() {
         </div>
       </header>
 
-      {/* Splash */}
+      {/* Splash (first time) */}
       {gate === "splash" && (
         <section className="card splash">
           <div className="splash-inner">
@@ -279,22 +289,39 @@ function AppInner() {
         </section>
       )}
 
-      {/* Locked (no lives) — render Tamagotchi to show dead sprite & overlay */}
+      {/* Locked (NO LIVES) — DO NOT MOUNT GAME */}
       {gate === "locked" && (
-        <div style={{ maxWidth: 980, margin: "0 auto" }}>
-          <Tamagotchi
-            key={tamagotchiKey}
-            walletAddress={activeAddr || undefined}
-          />
-        </div>
+        <section className="card splash" style={{ maxWidth: 640, margin: "24px auto" }}>
+          <div className="splash-inner">
+            <div className="splash-title" style={{ marginBottom: 8 }}>
+              No lives on this wallet
+            </div>
+            <div className="muted" style={{ marginBottom: 16, textAlign: "center" }}>
+              Send 1 NFT to the Vault to start. If another wallet already has a life,
+              switch to it and your pet will continue from there.
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+              {!isConnected ? (
+                <button className="btn btn-primary btn-lg" onClick={() => setPickerOpen(true)}>
+                  Connect Wallet
+                </button>
+              ) : (
+                <button className="btn btn-primary btn-lg" onClick={() => setVaultOpen(true)}>
+                  Send NFT (+1 life)
+                </button>
+              )}
+            </div>
+          </div>
+        </section>
       )}
 
-      {/* Game stays mounted even if wallet disconnects */}
+      {/* Game */}
       {gate === "game" && (
         <div style={{ maxWidth: 980, margin: "0 auto" }}>
           <Tamagotchi
             key={tamagotchiKey}
             walletAddress={activeAddr || undefined}
+            lives={livesCount}
           />
         </div>
       )}
