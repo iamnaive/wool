@@ -1,5 +1,5 @@
 // src/App.tsx
-// Gate fixes: reset on wallet switch + address-scoped NFT confirmations.
+// Gate fixes + optimistic life persist across reloads.
 // Comments: English only.
 
 import React, { useEffect, useState } from "react";
@@ -106,6 +106,25 @@ function AppInner() {
   const { connect, connectors, status: connectStatus } = useConnect();
   const { disconnect } = useDisconnect();
 
+  // --- optimistic life persist (per wallet, 15 min TTL) ---
+  const PENDING_KEY = (addr?: string | null) =>
+    `wg_${(addr || "").toLowerCase()}__pending_life`;
+  const setPendingLife = (addr?: string | null) => {
+    try { if (addr) localStorage.setItem(PENDING_KEY(addr), String(Date.now())); } catch {}
+  };
+  const clearPendingLife = (addr?: string | null) => {
+    try { if (addr) localStorage.removeItem(PENDING_KEY(addr)); } catch {}
+  };
+  const hasPendingLife = (addr?: string | null, ttlMs = 15 * 60_000) => {
+    try {
+      if (!addr) return false;
+      const raw = localStorage.getItem(PENDING_KEY(addr));
+      if (!raw) return false;
+      const t = Number(raw) || 0;
+      return Date.now() - t <= ttlMs;
+    } catch { return false; }
+  };
+
   // Keep last non-null address to preserve game key between reconnects
   const [activeAddr, setActiveAddr] = useState<string | null>(null);
   useEffect(() => {
@@ -141,11 +160,14 @@ function AppInner() {
   const [livesCount, setLivesCount] = useState(0);
   const [forceGame, setForceGame] = useState(false);
 
-  // Keep UI lives in sync with backend
+  // Keep UI lives in sync with backend; clear pending if real lives arrived
   useEffect(() => {
     setLivesCount(livesFromBackend);
-    if (livesFromBackend > 0) setForceGame(false);
-  }, [livesFromBackend]);
+    if (livesFromBackend > 0) {
+      clearPendingLife(address);
+      setForceGame(false);
+    }
+  }, [livesFromBackend, address]);
 
   // --- CRITICAL FIX 1: reset flags on wallet/chain change ---
   useEffect(() => {
@@ -153,14 +175,19 @@ function AppInner() {
     setForceGame(false);
     setLivesCount(0);
     setVaultOpen(false);
-  }, [address, chainId]);
-  // ----------------------------------------------------------
+
+    // NEW: if this wallet has a fresh pending-life (after reload/switch), keep the game open
+    if (hasPendingLife(address)) {
+      setForceGame(true);
+      setLivesCount((prev) => (prev > 0 ? prev : 1));
+    }
+  }, [address, chainId]); // ---------------------------------------------------
 
   // Bridge events
   useEffect(() => {
     const onRequestNft = () => setVaultOpen(true);
 
-    // --- CRITICAL FIX 2: scope confirm to current wallet address ---
+    // Address-scoped confirm + persist optimistic life (so reload keeps the gate)
     const onConfirmed = (e: Event) => {
       const ce = e as CustomEvent;
       const evAddr = String((ce?.detail as any)?.address || "").toLowerCase();
@@ -169,6 +196,8 @@ function AppInner() {
       setVaultOpen(false);
       setForceGame(true);
       setLivesCount((prev) => (prev > 0 ? prev : 1));
+      // NEW: persist pending life with TTL
+      setPendingLife(address);
     };
 
     window.addEventListener("wg:request-nft", onRequestNft as any);
