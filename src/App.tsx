@@ -18,30 +18,6 @@ const ls = {
 };
 const CHAIN_ID = MONAD.id;
 
-/** ===== debug pill (can be removed later) ===== */
-function DebugPill() {
-  const { address, isConnected } = useAccount();
-  const chainId = useChainId();
-  const { connect, connectors } = useConnect();
-  const { disconnect } = useDisconnect();
-  return (
-    <div style={{
-      position: "fixed", top: 8, right: 8, zIndex: 9999, pointerEvents: "auto",
-      background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.12)",
-      padding: "6px 8px", borderRadius: 10, fontSize: 12
-    }}>
-      <div>conn: <b>{String(isConnected)}</b></div>
-      <div>chain: <b>{chainId ?? "-"}</b></div>
-      <div>addr: <b>{address ? `${address.slice(0,6)}…${address.slice(-4)}` : "-"}</b></div>
-      <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-        <button className="btn" onClick={() => connectors[0] && connect({ connector: connectors[0] })}>Test Connect</button>
-        <button className="btn" onClick={() => disconnect()}>Test Disconnect</button>
-      </div>
-    </div>
-  );
-}
-
-/** ===== hooks ===== */
 function useIsLocked(chainId: number | null, address: string | null) {
   const [locked, setLocked] = useState(true);
   useEffect(() => { const v = ls.get("wg_locked"); setLocked(v === null ? true : Boolean(v)); }, [chainId, address]);
@@ -63,7 +39,7 @@ function useOptimisticLives(address?: string) {
 }
 
 /** ===== top bar ===== */
-function TopBar() {
+function TopBar({ onOpenVault }: { onOpenVault: () => void }) {
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
@@ -71,23 +47,9 @@ function TopBar() {
   const lives = useOptimisticLives(address);
 
   return (
-    <div
-      className="topbar"
-      style={{
-        paddingRight: 8,
-        position: "relative",
-        zIndex: 50,
-        pointerEvents: "auto",
-      }}
-    >
+    <div className="topbar" style={{ paddingRight: 8 }}>
       {/* Brand */}
-      <div
-        className="brand"
-        style={{
-          gap: 10, minWidth: 240, flex: "0 1 auto",
-          whiteSpace: "nowrap", overflow: "hidden",
-        }}
-      >
+      <div className="brand" style={{ gap: 10, minWidth: 240, whiteSpace: "nowrap", overflow: "hidden" }}>
         <div className="logo" style={{ display: "grid", placeItems: "center", marginRight: 2 }}>
           <span aria-hidden style={{ fontSize: 20, lineHeight: 1 }}>🥚</span>
         </div>
@@ -97,37 +59,40 @@ function TopBar() {
       </div>
 
       {/* Right side */}
-      {isConnected ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto", flexWrap: "wrap" }}>
-          <div className="pill" title="Lives">❤️ Lives: <b>{lives}</b></div>
-          <div className="pill" title="Network">{MONAD.name} • chain {chainId}</div>
-          <div className="pill" title="Address">{address?.slice(0, 6)}…{address?.slice(-4)}</div>
-          <button className="btn" onClick={() => disconnect()}>Disconnect</button>
-          <MuteButton />
-        </div>
-      ) : (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto", flexWrap: "wrap" }}>
-          {connectors.map((c) => (
-            <button
-              key={c.uid}
-              disabled={!c.ready || isPending}
-              className="btn"
-              onClick={() => connect({ connector: c })}
-              title={c.name}
-            >
-              {c.name}
-            </button>
-          ))}
-          <MuteButton />
-        </div>
-      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto", flexWrap: "wrap" }}>
+        {isConnected ? (
+          <>
+            <div className="pill" title="Lives">❤️ Lives: <b>{lives}</b></div>
+            <div className="pill" title="Network">{MONAD.name} • chain {chainId}</div>
+            <div className="pill" title="Address">{address?.slice(0, 6)}…{address?.slice(-4)}</div>
+            <button className="btn" onClick={onOpenVault} title="Send 1 NFT → +1 life">➕ Get life</button>
+            <button className="btn" onClick={() => disconnect()}>Disconnect</button>
+            <MuteButton />
+          </>
+        ) : (
+          <>
+            {connectors.map((c) => (
+              <button
+                key={c.uid}
+                disabled={!c.ready || isPending}
+                className="btn"
+                onClick={() => connect({ connector: c })}
+                title={c.name}
+              >
+                {c.name}
+              </button>
+            ))}
+            <MuteButton />
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
 /** ===== body ===== */
 function AppInner() {
-  const { address } = useAccount();
+  const { address, isConnected } = useAccount();
   const chainId = useChainId();
   const { locked, setLocked } = useIsLocked(chainId, address ?? null);
 
@@ -138,6 +103,7 @@ function AppInner() {
   const livesCount = useOptimisticLives(address);
   const activeAddr = address ?? null;
 
+  // wire game events -> vault
   useEffect(() => {
     const onRequestNft = () => setVaultOpen(true);
     const onConfirmed = () => {
@@ -160,11 +126,10 @@ function AppInner() {
   }, [address]);
 
   return (
-    <div className="page" style={{ pointerEvents: "auto" }}>
-      <TopBar />
+    <div className="page">
+      <TopBar onOpenVault={() => setVaultOpen(true)} />
 
-      {/* Stage — below header */}
-      <div className="stage" style={{ display: "grid", placeItems: "center", padding: 16, position: "relative", zIndex: 1 }}>
+      <div className="stage" style={{ display: "grid", placeItems: "center", padding: 16 }}>
         <Tamagotchi
           chainId={CHAIN_ID}
           address={activeAddr}
@@ -176,6 +141,7 @@ function AppInner() {
         />
       </div>
 
+      {/* (опция) выбор NFT из кошелька */}
       {pickerOpen && (
         <div onClick={() => setPickerOpen(false)} className="modal">
           <div onClick={(e) => e.stopPropagation()} className="card" style={{ width: 520, maxWidth: "92vw" }}>
@@ -185,23 +151,23 @@ function AppInner() {
         </div>
       )}
 
+      {/* явная кнопка “Send 1 NFT → +1 life” открывает этот модал */}
       {vaultOpen && (
         <div onClick={() => setVaultOpen(false)} className="modal">
           <div onClick={(e) => e.stopPropagation()} className="card" style={{ width: 520, maxWidth: "92vw" }}>
-            <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>Send NFT to Vault</div>
+            <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>
+              Send 1 NFT → +1 life
+            </div>
             <VaultPanel onClose={() => setVaultOpen(false)} />
           </div>
         </div>
       )}
-
-      {/* remove after checks */}
-      <DebugPill />
     </div>
   );
 }
 
 export default function App() {
-  // Providers live in main.tsx. Keep only AudioProvider here.
+  // Providers live in main.tsx — here only audio wrapper.
   return (
     <AudioProvider>
       <AppInner />
