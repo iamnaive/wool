@@ -1,5 +1,5 @@
 // src/App.tsx
-// Comments: English only.
+// English-only comments.
 
 import React, { useEffect, useState } from "react";
 import { WagmiProvider, useAccount, useConnect, useDisconnect, useChainId } from "wagmi";
@@ -12,12 +12,35 @@ import MuteButton from "./audio/MuteButton";
 import Tamagotchi from "./components/Tamagotchi";
 import VaultPanel from "./components/VaultPanel";
 
-/** ===== tiny utils ===== */
+/** ===== utils ===== */
 const ls = {
   get: (k: string) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } },
   set: (k: string, v: any) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 const CHAIN_ID = MONAD.id;
+
+/** ===== debug pill (can be removed later) ===== */
+function DebugPill() {
+  const { address, isConnected } = useAccount();
+  const chainId = useChainId();
+  const { connect, connectors } = useConnect();
+  const { disconnect } = useDisconnect();
+  return (
+    <div style={{
+      position: "fixed", top: 8, right: 8, zIndex: 9999, pointerEvents: "auto",
+      background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.12)",
+      padding: "6px 8px", borderRadius: 10, fontSize: 12
+    }}>
+      <div>conn: <b>{String(isConnected)}</b></div>
+      <div>chain: <b>{chainId ?? "-"}</b></div>
+      <div>addr: <b>{address ? `${address.slice(0,6)}…${address.slice(-4)}` : "-"}</b></div>
+      <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+        <button className="btn" onClick={() => connectors[0] && connect({ connector: connectors[0] })}>Test Connect</button>
+        <button className="btn" onClick={() => disconnect()}>Test Disconnect</button>
+      </div>
+    </div>
+  );
+}
 
 /** ===== hooks ===== */
 function useIsLocked(chainId: number | null, address: string | null) {
@@ -49,12 +72,20 @@ function TopBar() {
   const lives = useOptimisticLives(address);
 
   return (
-    <div className="topbar" style={{ paddingRight: 8 }}>
-      {/* brand */}
+    <div
+      className="topbar"
+      style={{
+        paddingRight: 8,
+        position: "relative",
+        zIndex: 50,             // поверх всего
+        pointerEvents: "auto",  // клики включены
+      }}
+    >
+      {/* Brand */}
       <div
         className="brand"
         style={{
-          gap: 10, minWidth: 220, flex: "0 1 auto",
+          gap: 10, minWidth: 240, flex: "0 1 auto",
           whiteSpace: "nowrap", overflow: "hidden",
         }}
       >
@@ -66,12 +97,12 @@ function TopBar() {
         </div>
       </div>
 
-      {/* right side */}
+      {/* Right side */}
       {isConnected ? (
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto", flexWrap: "wrap" }}>
           <div className="pill" title="Lives">❤️ Lives: <b>{lives}</b></div>
           <div className="pill" title="Network">{MONAD.name} • chain {chainId}</div>
-          <div className="pill" title="Address">{address?.slice(0,6)}…{address?.slice(-4)}</div>
+          <div className="pill" title="Address">{address?.slice(0, 6)}…{address?.slice(-4)}</div>
           <button className="btn" onClick={() => disconnect()}>Disconnect</button>
           <MuteButton />
         </div>
@@ -130,10 +161,11 @@ function AppInner() {
   }, [address]);
 
   return (
-    <div className="page">
+    <div className="page" style={{ pointerEvents: "auto" }}>
       <TopBar />
 
-      <div className="stage" style={{ display: "grid", placeItems: "center", padding: 16 }}>
+      {/* Stage — ниже шапки по слою */}
+      <div className="stage" style={{ display: "grid", placeItems: "center", padding: 16, position: "relative", zIndex: 1 }}>
         <Tamagotchi
           chainId={CHAIN_ID}
           address={activeAddr}
@@ -162,6 +194,9 @@ function AppInner() {
           </div>
         </div>
       )}
+
+      {/* remove after проверки */}
+      <DebugPill />
     </div>
   );
 }
@@ -173,7 +208,6 @@ export default function App() {
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        {/* Centralized audio: uses /audio/*.mp3 from public/audio after user gesture */}
         <AudioProvider>
           <AppInner />
         </AudioProvider>
