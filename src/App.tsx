@@ -18,6 +18,7 @@ const ls = {
 };
 const CHAIN_ID = MONAD.id;
 const PENDING_LIFE_KEY = "wg_pending_life";
+const LIVES_KEY = "wg_lives_v1";
 
 /* Lives (namespaced per chain+address, with optimistic bump) */
 function useOptimisticLives(address?: string | null) {
@@ -27,7 +28,7 @@ function useOptimisticLives(address?: string | null) {
     if (!addr) return setLives(0);
     const k = `${CHAIN_ID}:${addr}`;
     try {
-      const raw = localStorage.getItem("wg_lives_v1");
+      const raw = localStorage.getItem(LIVES_KEY);
       const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
       const optimisticFor = ls.get(PENDING_LIFE_KEY) as string | null;
       const base = map[k] ?? 0;
@@ -88,16 +89,53 @@ function AppInner() {
   const livesCount = useOptimisticLives(address);
   const activeAddr = address ?? null;
 
+  // helper to write lives
+  const writeLives = (addr: string | null | undefined, value: number) => {
+    const a = (addr || "").toLowerCase();
+    if (!a) return;
+    try {
+      const raw = localStorage.getItem(LIVES_KEY);
+      const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+      map[`${CHAIN_ID}:${a}`] = Math.max(0, Math.floor(value));
+      localStorage.setItem(LIVES_KEY, JSON.stringify(map));
+    } catch {}
+  };
+
+  // decrement once on death from child
+  const handleLoseLife = () => {
+    const a = (activeAddr || "").toLowerCase();
+    if (!a) return;
+    try {
+      const raw = localStorage.getItem(LIVES_KEY);
+      const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+      const key = `${CHAIN_ID}:${a}`;
+      const next = Math.max(0, (map[key] ?? 0) - 1);
+      map[key] = next;
+      localStorage.setItem(LIVES_KEY, JSON.stringify(map));
+    } catch {}
+    // force re-read by toggling a tiny flag in localStorage (optional),
+    // но у нас useOptimisticLives перечитывает по address, так что достаточно следующего эффекта:
+    setForceGame(false);
+  };
+
+  // hear global "lose-life" just in case (duplicate safety)
+  useEffect(() => {
+    const onLose = () => handleLoseLife();
+    window.addEventListener("wg:lose-life", onLose as any);
+    return () => window.removeEventListener("wg:lose-life", onLose as any);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeAddr]);
+
   useEffect(() => {
     const onRequestNft = () => setIsVaultOpen(true);
     const onConfirmed = () => {
       if (activeAddr) {
         ls.set(PENDING_LIFE_KEY, activeAddr);
         const key = `${CHAIN_ID}:${activeAddr.toLowerCase()}`;
-        const raw = localStorage.getItem("wg_lives_v1");
+        const raw = localStorage.getItem(LIVES_KEY);
         const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
         map[key] = (map[key] ?? 0) + 1;
-        localStorage.setItem("wg_lives_v1", JSON.stringify(map));
+        localStorage.setItem(LIVES_KEY, JSON.stringify(map));
       }
       setIsVaultOpen(false);
       setForceGame(true);
@@ -158,6 +196,7 @@ function AppInner() {
             walletAddress={activeAddr || undefined}
             currentForm={"egg" as any}
             lives={livesCount}
+            onLoseLife={handleLoseLife}   {/* ← pass down so life gets decremented exactly once */}
           />
         </div>
       )}
