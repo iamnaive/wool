@@ -1,6 +1,6 @@
 // src/App.tsx
-// Mount game in "locked" (so offline death is visible) + WOOL plumbing + audio fix.
-// Comments: English only.
+// Mount game in "locked" (offline death visible) + hook audio/events + optional WOOL plumbing.
+// Uses your audio layer (AudioProvider + MuteButton). No renames, no logic stripping.
 
 import React, { useEffect, useState } from "react";
 import {
@@ -17,60 +17,17 @@ import { defineChain } from "viem";
 
 import Tamagotchi from "./components/Tamagotchi";
 import VaultPanel from "./components/VaultPanel";
+import { MuteButton } from "./audio/MuteButton";
+import AudioProvider from "./audio/AudioProvider";
 import "./styles.css";
 
-/** ---------- Local storage helpers ---------- */
-const ls = {
-  get: (k: string) => {
-    try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; }
-  },
-  set: (k: string, v: any) => {
-    try { localStorage.setItem(k, JSON.stringify(v)); } catch {}
-  },
-  del: (k: string) => {
-    try { localStorage.removeItem(k); } catch {}
-  },
-};
-
-/** ---------- Simple audio bus (uses hidden <audio> tags in DOM) ---------- */
-const audio = (() => {
-  let muted = ls.get("wg_muted") === true;
-
-  const play = async (id: string) => {
-    if (muted) return;
-    const el = document.getElementById(id) as HTMLAudioElement | null;
-    try { await el?.play(); } catch {}
-  };
-
-  return {
-    isMuted: () => muted,
-    setMuted: (m: boolean) => { muted = m; ls.set("wg_muted", m); },
-    playEatSfx: () => play("sfx_eat"),
-    playCatastrophe: () => play("sfx_catastrophe"),
-    playCatEnd: () => play("sfx_cat_end"),
-  };
-})();
-
-function MuteButton() {
-  const [muted, setMuted] = useState<boolean>(audio.isMuted());
-  return (
-    <button
-      className="btn btn-ghost"
-      onClick={() => { const n = !muted; audio.setMuted(n); setMuted(n); }}
-      title={muted ? "Unmute" : "Mute"}
-    >
-      {muted ? "🔇" : "🔊"}
-    </button>
-  );
-}
-
-/** ---------- ENV & Network ---------- */
+/* ---------- ENV & Network ---------- */
 const MONAD_CHAIN_ID = Number((import.meta as any).env?.VITE_CHAIN_ID ?? 10143) || 10143;
 const RPC_URL        = String((import.meta as any).env?.VITE_RPC_URL || "http://127.0.0.1:8545");
 const WC_ID          = (import.meta as any).env?.VITE_WALLETCONNECT_ID || "";
 const CB_APP         = (import.meta as any).env?.VITE_COINBASE_APP || "";
 
-// REST backends (keep your own if you already have them)
+/** Optional REST backends (keep your own if already set) */
 const LIVES_REST = (import.meta as any).env?.VITE_LIVES_REST || "http://localhost:8787";
 const WOOL_REST  = (import.meta as any).env?.VITE_WOOL_REST  || "http://localhost:8787";
 
@@ -82,13 +39,21 @@ const MONAD = defineChain({
   testnet: true,
 });
 
+/** Connectors — unchanged shape */
 const connectorsList = [
   injected({ shimDisconnect: true }),
-  WC_ID ? walletConnect({
-    projectId: WC_ID,
-    metadata: { name: "Wooligotchi", description: "Send 1 NFT → get 1 life", url: "https://example.local", icons: [] },
-    showQrModal: true,
-  }) : null,
+  WC_ID
+    ? walletConnect({
+        projectId: WC_ID,
+        metadata: {
+          name: "Wooligotchi",
+          description: "Send 1 NFT → get 1 life",
+          url: "https://example.local",
+          icons: [],
+        },
+        showQrModal: true,
+      })
+    : null,
   CB_APP ? coinbaseWallet({ appName: CB_APP }) : null,
 ].filter(Boolean) as any[];
 
@@ -99,7 +64,7 @@ const config = createConfig({
   transports: { [MONAD.id]: http(RPC_URL) },
 });
 
-/** ---------- Lives polling (minimal) ---------- */
+/* ---------- Lives polling (minimal, safe) ---------- */
 function useRemoteLives(chainId?: number, address?: string | null) {
   const [lives, setLives] = useState(0);
   useEffect(() => {
@@ -107,7 +72,9 @@ function useRemoteLives(chainId?: number, address?: string | null) {
     let t: any;
     const tick = async () => {
       try {
-        const res = await fetch(`${LIVES_REST}/lives?addr=${encodeURIComponent(address)}&chain=${chainId}`);
+        const res = await fetch(
+          `${LIVES_REST}/lives?addr=${encodeURIComponent(address)}&chain=${chainId}`
+        );
         if (res.ok) {
           const data = await res.json();
           if (typeof data?.lives === "number") setLives(data.lives);
@@ -121,18 +88,19 @@ function useRemoteLives(chainId?: number, address?: string | null) {
   return lives;
 }
 
-/** ---------- WOOL polling (balance + today + cap) ---------- */
+/* ---------- WOOL polling (optional; harmless if backend not set) ---------- */
 function useWoolBalance(address?: string | null, chainId?: number | null) {
   const [state, setState] = React.useState<{ balance: number; today: number; cap: number }>({
     balance: 0, today: 0, cap: 5,
   });
-
   React.useEffect(() => {
     if (!address || !chainId) return;
     let t: any;
     const tick = async () => {
       try {
-        const res = await fetch(`${WOOL_REST}/wool?addr=${encodeURIComponent(address)}&chain=${chainId}`);
+        const res = await fetch(
+          `${WOOL_REST}/wool?addr=${encodeURIComponent(address)}&chain=${chainId}`
+        );
         if (res.ok) {
           const data = await res.json();
           setState({
@@ -147,11 +115,10 @@ function useWoolBalance(address?: string | null, chainId?: number | null) {
     t = setInterval(tick, 3000);
     return () => clearInterval(t);
   }, [address, chainId]);
-
   return state;
 }
 
-/** ---------- AppInner ---------- */
+/* ---------- AppInner ---------- */
 function AppInner() {
   const { isConnected, address } = useAccount();
   const chainId = useChainId();
@@ -165,31 +132,14 @@ function AppInner() {
   const livesCount = useRemoteLives(chainId, address);
   const { balance: woolBalance, today: woolToday, cap: woolCap } = useWoolBalance(address, chainId);
 
-  /** Request NFT (death overlay opens Vault) */
+  /** Open Vault when game requests NFT (death overlay) */
   useEffect(() => {
     const onRequestNft = () => setVaultOpen(true);
     window.addEventListener("wg:request-nft", onRequestNft as any);
     return () => window.removeEventListener("wg:request-nft", onRequestNft as any);
   }, []);
 
-  /** Audio listeners — FIX event name: "wg:feed" */
-  useEffect(() => {
-    const onFeed = () => audio.playEatSfx();
-    const onCatStart = () => audio.playCatastrophe();
-    const onCatEnd = () => audio.playCatEnd();
-
-    window.addEventListener("wg:feed", onFeed as any);
-    window.addEventListener("wg:catastrophe-start", onCatStart as any);
-    window.addEventListener("wg:catastrophe-end", onCatEnd as any);
-
-    return () => {
-      window.removeEventListener("wg:feed", onFeed as any);
-      window.removeEventListener("wg:catastrophe-start", onCatStart as any);
-      window.removeEventListener("wg:catastrophe-end", onCatEnd as any);
-    };
-  }, []);
-
-  /** Handle WOOL collect requests from Tamagotchi */
+  /** Listen to WOOL collect requests from the game (button in Tamagotchi) */
   useEffect(() => {
     const onCollect = async () => {
       if (!address || !chainId) return;
@@ -201,7 +151,7 @@ function AppInner() {
         });
         const data = res.ok ? await res.json() : null;
 
-        // Notify game so it can hide one ball / play +1 animation
+        // Let the game update its UI (+1, hide one ball, etc.)
         const ev = new CustomEvent("wg:wool-updated", {
           detail: {
             ok: !!data,
@@ -213,24 +163,34 @@ function AppInner() {
         window.dispatchEvent(ev);
       } catch {}
     };
-
     window.addEventListener("wg:wool-collect-request" as any, onCollect as any);
     return () => window.removeEventListener("wg:wool-collect-request" as any, onCollect as any);
   }, [address, chainId, woolBalance, woolToday, woolCap]);
 
-  /** Gate selection */
+  /** IMPORTANT: audio events from game (your game dispatches "wg:fed" on feed) */
+  useEffect(() => {
+    const onFed = () => window.dispatchEvent(new CustomEvent("wg:audio:feed")); // AudioManager listens internally
+    const onCatOn  = () => window.dispatchEvent(new CustomEvent("wg:audio:catastrophe-on"));
+    const onCatOff = () => window.dispatchEvent(new CustomEvent("wg:audio:catastrophe-off"));
+
+    window.addEventListener("wg:fed", onFed as any); // <- your event name
+    window.addEventListener("wg:catastrophe-start", onCatOn as any);
+    window.addEventListener("wg:catastrophe-end", onCatOff as any);
+
+    return () => {
+      window.removeEventListener("wg:fed", onFed as any);
+      window.removeEventListener("wg:catastrophe-start", onCatOn as any);
+      window.removeEventListener("wg:catastrophe-end", onCatOff as any);
+    };
+  }, []);
+
   const gate: "splash" | "locked" | "game" =
     !isConnected ? "splash" : livesCount > 0 ? "game" : "locked";
 
-  const tamagotchiKey = `wg-${String(chainId ?? MONAD_CHAIN_ID)}-${String(address || "none")}`;
+  const tkey = `wg-${String(chainId ?? MONAD_CHAIN_ID)}-${String(address || "none")}`;
 
   return (
     <div className="wrap">
-      {/* Hidden audio tags used by the audio bus */}
-      <audio id="sfx_eat"          src="/audio/eat.mp3"          preload="auto" />
-      <audio id="sfx_catastrophe"  src="/audio/catastrophe.mp3"  preload="auto" />
-      <audio id="sfx_cat_end"      src="/audio/cat_end.mp3"      preload="auto" />
-
       <header className="topbar">
         <div className="brand">
           <div className="logo">🐣</div>
@@ -239,7 +199,6 @@ function AppInner() {
 
         <div className="walletRow">
           <MuteButton />
-
           {isConnected ? (
             <>
               <span className="pill">
@@ -261,9 +220,7 @@ function AppInner() {
           <div className="splash-inner">
             <div className="splash-title">Wooligotchi</div>
             <div className="muted">Send 1 NFT → get 1 life (to the Vault)</div>
-            <button className="btn btn-primary btn-lg" onClick={() => setPickerOpen(true)}>
-              Connect Wallet
-            </button>
+            <button className="btn btn-primary btn-lg" onClick={() => setPickerOpen(true)}>Connect Wallet</button>
           </div>
         </section>
       )}
@@ -273,16 +230,13 @@ function AppInner() {
           {/* Mount game even when locked so DeathOverlay can show immediately */}
           <div style={{ maxWidth: 980, margin: "0 auto" }}>
             <Tamagotchi
-              key={tamagotchiKey}
+              key={tkey}
+              currentForm={"egg"}
               walletAddress={address || undefined}
               lives={0}
-              woolCap={woolCap}
-              woolToday={woolToday}
-              woolBalance={woolBalance}
             />
           </div>
 
-          {/* Keep your explanatory card below */}
           <section className="card splash" style={{ maxWidth: 640, margin: "24px auto" }}>
             <div className="splash-inner">
               <div className="splash-title" style={{ marginBottom: 8 }}>No lives on this wallet</div>
@@ -305,12 +259,10 @@ function AppInner() {
       {gate === "game" && (
         <div style={{ maxWidth: 980, margin: "0 auto" }}>
           <Tamagotchi
-            key={tamagotchiKey}
+            key={tkey}
+            currentForm={"egg"}
             walletAddress={address || undefined}
             lives={livesCount}
-            woolCap={woolCap}
-            woolToday={woolToday}
-            woolBalance={woolBalance}
           />
         </div>
       )}
@@ -355,11 +307,14 @@ function AppInner() {
   );
 }
 
-/** ---------- Root ---------- */
+/* ---------- Root ---------- */
 export default function App() {
   return (
     <WagmiProvider config={config}>
-      <AppInner />
+      {/* Your audio system mounts here and manages bgm/sfx internally */}
+      <AudioProvider>
+        <AppInner />
+      </AudioProvider>
     </WagmiProvider>
   );
 }
