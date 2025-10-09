@@ -224,39 +224,27 @@ function ConnectModal({ onClose }: { onClose: () => void }) {
 function WalletButtons() {
   const { connect, connectors } = useConnect();
 
-  // Filter & label: only actual wagmi connectors, dedupe by name
-  const list = useMemo(() => {
-    const items = connectors.map((c) => {
-      const isInjected = (c.type as string) === "injected";
-      const label =
-        isInjected && (globalThis as any).ethereum?.isMetaMask ? "MetaMask" :
-        isInjected ? "Injected" :
-        c.name;
-      return { c, label, isInjected };
-    });
-
-    const seen = new Set<string>();
-    return items.filter((it) => {
-      if (seen.has(it.label)) return false;
-      seen.add(it.label);
-      return ["Injected", "MetaMask", "WalletConnect", "Coinbase Wallet"].includes(it.label);
-    });
-  }, [connectors]);
-
   return (
     <div className="wallet-grid">
-      {list.map(({ c, label, isInjected }) => {
-        const key = (c as any).id ?? (c as any).uid ?? label;
-        // Only disable injected when provider is not present; WC/CB stay clickable
+      {connectors.map((c) => {
+        const opts = (c as any).options ?? {};
+        // Prefer explicit labels by target; fallback to wagmi name
+        const label =
+          opts?.target === "metaMask" ? "MetaMask" :
+          opts?.target === "phantom" ? "Phantom" :
+          c.name;
+
+        // Only disable injected if that exact target is not present.
+        // WalletConnect / Coinbase stay clickable.
+        const isInjected = (c.type as string) === "injected";
         const disabled = isInjected && !c.ready;
-        const title = !disabled ? `Connect with ${label}` : "Not installed";
 
         return (
           <button
-            key={key}
+            key={(c as any).id ?? (c as any).uid ?? label}
             className="btn"
             disabled={disabled}
-            title={title}
+            title={disabled ? `${label} not installed` : `Connect with ${label}`}
             onClick={() => connect({ connector: c })}
           >
             {label}
@@ -266,6 +254,7 @@ function WalletButtons() {
     </div>
   );
 }
+
 
 /* Export with audio provider (wagmi/query providers live in main.tsx) */
 export default function App() {
