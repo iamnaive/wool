@@ -939,7 +939,12 @@ export default function Tamagotchi({
   const copyAddr = async () => { try { await navigator.clipboard.writeText(NFT_CONTRACT); } catch {} };
 
   /** Death overlay — теперь показываем ТОЛЬКО если lives==0 */
-  const DeathOverlay = ((lives || 0) <= 0) && (isDead || forceDeadPreview) ? (
+  + // death flags (render-time)
++ const deadNow = isDead || forceDeadPreview;               // draw dead sprite + 0%
++ const showDeathOverlay = (lives || 0) <= 0 && deadNow;    // overlay only when no lives
++
++ /** Death overlay (only when no lives) */
++ const DeathOverlay = showDeathOverlay ? (
     <OverlayCard>
       <div style={{ fontSize: 18, marginBottom: 6 }}>Your pet has died</div>
       {deathReason && <div className="muted" style={{ marginBottom: 12 }}>Cause: {deathReason}</div>}
