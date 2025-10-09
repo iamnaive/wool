@@ -58,7 +58,7 @@ export const AudioProvider: React.FC<React.PropsWithChildren> = ({ children }) =
       bgmMainRef.current = makeAudio("/audio/bgm_main.mp3", true, 0.7);
       bgmDisasterRef.current = makeAudio("/audio/bgm_disaster.mp3", true, 0.7);
       sfxEatRef.current = makeAudio("/audio/sfx_eat.mp3", false, 1);
-      sfxCatRef.current = makeAudio("/audio/sfx_catastrophe.mp3", false, 1);
+      sfxCatRef.current = makeAudio("/audio/sfx_eat.mp3", false, 1);
       sfxCatEndRef.current = makeAudio("/audio/sfx_cat_end.mp3", false, 1);
 
       setArmed(true);
