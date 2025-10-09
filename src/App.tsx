@@ -57,40 +57,62 @@ function useOptimisticLives(address: string | undefined) {
   return lives;
 }
 
-/** ===== UI bits ===== */
-function ConnectStrip() {
+/** ===== Top bar ===== */
+function TopBar() {
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
   const chainId = useChainId();
+  const lives = useOptimisticLives(address);
 
-  return isConnected ? (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <div className="pill">
-        {address?.slice(0, 6)}…{address?.slice(-4)} • chain {chainId}
+  return (
+    <div className="topbar">
+      {/* Brand (emoji egg + name) */}
+      <div className="brand" style={{ gap: 10 }}>
+        <div className="logo" style={{ display: "grid", placeItems: "center" }}>
+          <span aria-hidden style={{ fontSize: 22, lineHeight: 1 }}>🥚</span>
+        </div>
+        <div className="title" style={{ fontWeight: 800 }}>Wooligotchi</div>
       </div>
-      <button className="btn" onClick={() => disconnect()}>
-        Disconnect
-      </button>
-      <MuteButton />
-    </div>
-  ) : (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      {connectors.map((c) => (
-        <button
-          key={c.uid}
-          disabled={!c.ready || isPending}
-          className="btn"
-          onClick={() => connect({ connector: c })}
-        >
-          {c.name}
-        </button>
-      ))}
-      <MuteButton />
+
+      {/* Right side */}
+      {isConnected ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div className="pill" title="Lives">
+            ❤️ Lives: <b>{lives}</b>
+          </div>
+          <div className="pill" title="Network">
+            {MONAD.name} • chain {chainId}
+          </div>
+          <div className="pill" title="Address">
+            {address?.slice(0, 6)}…{address?.slice(-4)}
+          </div>
+          <button className="btn" onClick={() => disconnect()}>
+            Disconnect
+          </button>
+          <MuteButton />
+        </div>
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {connectors.map((c) => (
+            <button
+              key={c.uid}
+              disabled={!c.ready || isPending}
+              className="btn"
+              onClick={() => connect({ connector: c })}
+              title={c.name}
+            >
+              {c.name}
+            </button>
+          ))}
+          <MuteButton />
+        </div>
+      )}
     </div>
   );
 }
 
+/** ===== Main body ===== */
 function AppInner() {
   const { address } = useAccount();
   const chainId = useChainId();
@@ -131,16 +153,9 @@ function AppInner() {
 
   return (
     <div className="page">
-      {/* Top bar matches .topbar styles */}
-      <div className="topbar">
-        <div className="brand" style={{ gap: 10 }}>
-          <div className="logo" />
-          <div className="title" style={{ fontWeight: 700 }}>Woolly Eggs</div>
-        </div>
-        <ConnectStrip />
-      </div>
+      <TopBar />
 
-      {/* Stage area styled by .stage from styles.css */}
+      {/* Stage area styled by .stage */}
       <div className="stage" style={{ display: "grid", placeItems: "center", padding: 16 }}>
         <Tamagotchi
           chainId={CHAIN_ID}
@@ -152,9 +167,6 @@ function AppInner() {
           onRequestNft={() => setVaultOpen(true)}
         />
       </div>
-
-      {/* Optional footer not required by your CSS, можно оставить пустым */}
-      {/* <div className="footer muted">Monad testnet mini-app • Woolly Eggs</div> */}
 
       {pickerOpen && (
         <div onClick={() => setPickerOpen(false)} className="modal">
