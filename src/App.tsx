@@ -1,21 +1,14 @@
-import { AudioProvider } from "./audio/AudioProvider";
-import MuteButton from "./audio/MuteButton";
 // src/App.tsx
 // Mount Tamagotchi even when locked so DeathOverlay shows after offline death.
 // Comments: English only.
 
 import React, { useEffect, useState } from "react";
-import {
-  http,
-  createConfig,
-  WagmiProvider,
-  useAccount,
-  useConnect,
-  useDisconnect,
-  useChainId,
-} from "wagmi";
-import { injected, walletConnect, coinbaseWallet } from "wagmi/connectors";
-import { defineChain } from "viem";
+import { WagmiProvider, useAccount, useConnect, useDisconnect, useChainId } from "wagmi";
+
+import { config, MONAD } from "./utils/wagmiConfigLike";
+import { AudioProvider } from "./audio/AudioProvider";
+import MuteButton from "./audio/MuteButton";
+
 import Tamagotchi from "./components/Tamagotchi";
 import VaultPanel from "./components/VaultPanel";
 
@@ -36,32 +29,7 @@ const ls = {
   },
 };
 
-/** ===== Chain/Wagmi minimal config (kept as-is to not break gameplay) ===== */
-const CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID ?? 10143);
-const RPC_URL = String(
-  import.meta.env.VITE_RPC_URL ?? "https://testnet-rpc.monad.xyz"
-);
-const WC_PROJECT_ID = String(import.meta.env.VITE_WC_PROJECT_ID ?? "");
-
-export const MONAD = defineChain({
-  id: CHAIN_ID,
-  name: "Monad Testnet",
-  nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
-  rpcUrls: { default: { http: [RPC_URL] } },
-});
-
-export const config = createConfig({
-  chains: [MONAD],
-  connectors: [
-    injected({ shimDisconnect: true }),
-    ...(WC_PROJECT_ID
-      ? [walletConnect({ projectId: WC_PROJECT_ID, showQrModal: true })]
-      : []),
-    coinbaseWallet({ appName: "Woolly Eggs" }),
-  ],
-  transports: { [MONAD.id]: http(RPC_URL) },
-  ssr: false,
-});
+const CHAIN_ID = MONAD.id;
 
 /** ===== Small hooks / helpers preserved ===== */
 function useIsLocked(chainId: number | null, address: string | null) {
@@ -77,11 +45,11 @@ function useOptimisticLives(address: string | undefined) {
   const [lives, setLives] = useState<number>(0);
   useEffect(() => {
     if (!address) return;
-    const key = `wg_lives_v1:${CHAIN_ID}:${address.toLowerCase()}`;
+    const k = `${CHAIN_ID}:${address.toLowerCase()}`;
     const raw = localStorage.getItem("wg_lives_v1");
     try {
       const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
-      setLives(map[key] ?? 0);
+      setLives(map[k] ?? 0);
     } catch {
       setLives(0);
     }
@@ -121,7 +89,7 @@ function ConnectBar() {
               {c.name}
             </button>
           ))}
-          {/* Audio toggle is still visible; will arm on first tap */}
+          {/* Audio toggle is visible; provider will arm on first user gesture */}
           <MuteButton />
         </div>
       )}
@@ -140,19 +108,18 @@ function AppInner() {
 
   // Lives from backend + optimistic +1 after NFT send
   const livesCount = useOptimisticLives(address);
-
   const activeAddr = address ?? null;
 
-  // === Events from Tamagotchi ===
+  // Events from Tamagotchi
   useEffect(() => {
     const onRequestNft = () => setVaultOpen(true);
 
-    const onConfirmed = (e: Event) => {
+    const onConfirmed = () => {
       // optimistic +1 life locally (real backend may sync later)
       try {
         const addr = activeAddr;
         if (!addr) return;
-        const k = `wg_lives_v1:${CHAIN_ID}:${addr.toLowerCase()}`;
+        const k = `${CHAIN_ID}:${addr.toLowerCase()}`;
         const raw = localStorage.getItem("wg_lives_v1");
         const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
         map[k] = (map[k] ?? 0) + 1;
@@ -201,10 +168,7 @@ function AppInner() {
             className="card"
             style={{ width: 520, maxWidth: "92vw" }}
           >
-            <div
-              className="title"
-              style={{ fontSize: 20, marginBottom: 10, color: "white" }}
-            >
+            <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>
               Pick NFT from Wallet
             </div>
             <VaultPanel onClose={() => setPickerOpen(false)} />
@@ -219,10 +183,7 @@ function AppInner() {
             className="card"
             style={{ width: 520, maxWidth: "92vw" }}
           >
-            <div
-              className="title"
-              style={{ fontSize: 20, marginBottom: 10, color: "white" }}
-            >
+            <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>
               Send NFT to Vault
             </div>
             <VaultPanel onClose={() => setVaultOpen(false)} />
@@ -236,7 +197,7 @@ function AppInner() {
 export default function App() {
   return (
     <WagmiProvider config={config}>
-      {/* Centralized audio: will arm and play /audio/bgm_main.mp3 after user gesture */}
+      {/* Centralized audio: will arm and use /audio/*.mp3 (public/audio) after user gesture */}
       <AudioProvider>
         <AppInner />
       </AudioProvider>
