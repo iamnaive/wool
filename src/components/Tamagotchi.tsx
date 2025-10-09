@@ -29,7 +29,7 @@ const EVOLVE_ADULT_AT = 2 * 24 * 3600_000;
 const BG_SRC = "/bg/BG.png";
 const POOP_SRCS = ["/sprites/poop/poop1.png", "/sprites/poop/poop2.png", "/sprites/poop/poop3.png"];
 
-/** Food: 3 frames, played 2× slower */
+/** Food: 3 frames */
 const FEED_FRAMES = {
   burger: ["/sprites/ui/food/burger/000.png", "/sprites/ui/food/burger/001.png", "/sprites/ui/food/burger/002.png"],
   cake:   ["/sprites/ui/food/cake/000.png",   "/sprites/ui/food/cake/001.png",   "/sprites/ui/food/cake/002.png"],
@@ -542,11 +542,10 @@ export default function Tamagotchi({
     }
   }, [isDead]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** When new life confirmed → reset (also cancel forceDeadPreview immediately) */
+  /** When new life confirmed → reset */
   useEffect(() => {
     const onConfirmed = () => {
       if (deadRef.current || forceDeadPreviewRef.current) {
-        // hide overlay instantly, then full reset
         setForceDeadPreview(false);
         setIsDead(false);
         performReset();
@@ -744,8 +743,8 @@ export default function Tamagotchi({
       const nowAbs = Date.now();
       const sleepingNow = isSleepingAt(nowAbs);
 
-          // draw as dead whenever deadNow; overlay is handled separately
-     const deadUi = deadNow;
+      // use refs so state changes are reflected without recreating the loop
+      const deadUi = deadRef.current || forceDeadPreviewRef.current;
 
       const avatarAnimKey: AnimKey = (() => {
         if (deadUi) return "idle";
@@ -771,11 +770,11 @@ export default function Tamagotchi({
 
         (ctx as any).imageSmoothingEnabled = false;
         ctx.drawImage(av, ax, ay, aw, ah);
-        
+
         let hp = Math.round((statsRef.current.health ?? 0) * 100);
-        if (deadNow) hp = 0; // show 0% when dead
+        if (deadUi) hp = 0;
         const label = `❤️ ${hp}%`;
-        
+
         ctx.font = "10px monospace";
         ctx.textBaseline = "top";
         const tw = ctx.measureText(label).width;
@@ -788,7 +787,7 @@ export default function Tamagotchi({
         ctx.fillText(label, tx, ty);
       }
 
-      // World layer
+      // world layer
       ctx.save();
       ctx.translate(0, Y_SHIFT);
 
@@ -938,13 +937,11 @@ export default function Tamagotchi({
   /** Clipboard helper */
   const copyAddr = async () => { try { await navigator.clipboard.writeText(NFT_CONTRACT); } catch {} };
 
-  /** Death overlay — теперь показываем ТОЛЬКО если lives==0 */
-  + // death flags (render-time)
-+ const deadNow = isDead || forceDeadPreview;               // draw dead sprite + 0%
-+ const showDeathOverlay = (lives || 0) <= 0 && deadNow;    // overlay only when no lives
-+
-+ /** Death overlay (only when no lives) */
-+ const DeathOverlay = showDeathOverlay ? (
+  // render-time flags for overlay
+  const deadNow = isDead || forceDeadPreview;
+  const showDeathOverlay = (lives || 0) <= 0 && deadNow;
+
+  const DeathOverlay = showDeathOverlay ? (
     <OverlayCard>
       <div style={{ fontSize: 18, marginBottom: 6 }}>Your pet has died</div>
       {deathReason && <div className="muted" style={{ marginBottom: 12 }}>Cause: {deathReason}</div>}
@@ -999,19 +996,11 @@ export default function Tamagotchi({
       <div
         style={{
           marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center",
-          opacity: (isDead || forceDeadPreview) ? 0.5 : 1,
-          pointerEvents: (isDead || forceDeadPreview) ? ("none" as const) : ("auto" as const),
+          opacity: deadNow ? 0.5 : 1,
+          pointerEvents: deadNow ? ("none" as const) : ("auto" as const),
         }}
       >
-        <button
-          className="btn"
-          disabled
-          title="Coming soon"
-          style={{ opacity: 0.45, cursor: "not-allowed" }}
-        >
-          🧶 WOOL
-        </button>
-
+        <button className="btn" disabled title="Coming soon" style={{ opacity: 0.45, cursor: "not-allowed" }}>🧶 WOOL</button>
         <button className="btn" onClick={act.feedBurger} disabled={burgerLeft>0}>🍔 Burger{burgerLeft>0?` (${Math.ceil(burgerLeft/1000)}s)`:``}</button>
         <button className="btn" onClick={act.feedCake} disabled={cakeLeft>0}>🍰 Cake{cakeLeft>0?` (${Math.ceil(cakeLeft/1000)}s)`:``}</button>
         <button className="btn" onClick={act.play}>🎮 Play</button>
@@ -1020,9 +1009,7 @@ export default function Tamagotchi({
       </div>
 
       {/* Sleep controls */}
-      <div
-        style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", justifyContent: "center" }}
-      >
+      <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", justifyContent: "center" }}>
         <label style={{ display: "flex", alignItems: "center", gap: 6, opacity: sleepLocked ? 0.5 : 1 }}>
           <input type="checkbox" checked={useAutoTime} disabled={sleepLocked} onChange={(e) => setUseAutoTime(e.target.checked)} />
           Auto local sleep 22:00–08:30
@@ -1163,7 +1150,6 @@ function simulateOffline(args: {
       if (s.hunger <= 0 || s.health <= 0) {
         died = true;
         wasCatastrophe = catastropheActive;
-        wasSickAtDeath = sick;
         deathReason =
           s.hunger <= 0 ? "starvation"
           : catastropheActive ? "fatal event"
@@ -1181,7 +1167,7 @@ function simulateOffline(args: {
     }
   }
 
-  return { stats: clampStats(s), sick, newConsumed: newly, died, deathReason, wasCatastrophe, wasSick: wasSickAtDeath };
+  return { stats: clampStats(s), sick, newConsumed: newly, died, deathReason, wasCatastrophe, wasSick: false };
 }
 
 /** Tiny UI atoms */
