@@ -44,8 +44,12 @@ function useIsLocked(chainId: number | null, address: string | null) {
 function useOptimisticLives(address: string | undefined) {
   const [lives, setLives] = useState<number>(0);
   useEffect(() => {
-    if (!address) return;
-    const k = `${CHAIN_ID}:${address.toLowerCase()}`;
+    const addr = address?.toLowerCase();
+    if (!addr) {
+      setLives(0);
+      return;
+    }
+    const k = `${CHAIN_ID}:${addr}`;
     const raw = localStorage.getItem("wg_lives_v1");
     try {
       const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
@@ -66,18 +70,52 @@ function TopBar() {
   const lives = useOptimisticLives(address);
 
   return (
-    <div className="topbar">
-      {/* Brand (emoji egg + name) */}
-      <div className="brand" style={{ gap: 10 }}>
-        <div className="logo" style={{ display: "grid", placeItems: "center" }}>
-          <span aria-hidden style={{ fontSize: 22, lineHeight: 1 }}>🥚</span>
+    <div className="topbar" style={{ paddingRight: 8 }}>
+      {/* Brand (emoji egg + name) — reserved width to avoid clipping */}
+      <div
+        className="brand"
+        style={{
+          gap: 10,
+          minWidth: 220,
+          flex: "0 1 auto",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          className="logo"
+          style={{
+            display: "grid",
+            placeItems: "center",
+            marginRight: 2,
+            flex: "0 0 auto",
+          }}
+        >
+            <span aria-hidden style={{ fontSize: 20, lineHeight: 1 }}>🥚</span>
         </div>
-        <div className="title" style={{ fontWeight: 800 }}>Wooligotchi</div>
+        <div
+          className="title"
+          style={{
+            fontWeight: 800,
+            fontSize: "clamp(18px, 2.2vw, 26px)",
+            letterSpacing: "0.2px",
+          }}
+        >
+          Wooligotchi
+        </div>
       </div>
 
       {/* Right side */}
       {isConnected ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginLeft: "auto",
+            flexWrap: "wrap",
+          }}
+        >
           <div className="pill" title="Lives">
             ❤️ Lives: <b>{lives}</b>
           </div>
@@ -93,7 +131,15 @@ function TopBar() {
           <MuteButton />
         </div>
       ) : (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginLeft: "auto",
+            flexWrap: "wrap",
+          }}
+        >
           {connectors.map((c) => (
             <button
               key={c.uid}
@@ -122,7 +168,6 @@ function AppInner() {
   const [vaultOpen, setVaultOpen] = useState(false);
   const [forceGame, setForceGame] = useState(false);
 
-  // Lives from backend + optimistic +1 after NFT send
   const livesCount = useOptimisticLives(address);
   const activeAddr = address ?? null;
 
@@ -133,9 +178,9 @@ function AppInner() {
     const onConfirmed = () => {
       // optimistic +1 life locally (real backend may sync later)
       try {
-        const addr = activeAddr;
+        const addr = activeAddr?.toLowerCase();
         if (!addr) return;
-        const k = `${CHAIN_ID}:${addr.toLowerCase()}`;
+        const k = `${CHAIN_ID}:${addr}`;
         const raw = localStorage.getItem("wg_lives_v1");
         const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
         map[k] = (map[k] ?? 0) + 1;
