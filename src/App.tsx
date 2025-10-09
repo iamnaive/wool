@@ -1,5 +1,5 @@
 // src/App.tsx
-// Gate fixes + optimistic life persist across reloads.
+// Mount Tamagotchi even when locked so DeathOverlay shows after offline death.
 // Comments: English only.
 
 import React, { useEffect, useState } from "react";
@@ -146,7 +146,7 @@ function useOptimisticLives(address?: string | null) {
       setLives((x) => (x > 0 ? x : 1));
     }
 
-    // Poll backend (optional) for real lives
+    // Poll backend for real lives
     let t: any;
     async function tick() {
       try {
@@ -181,7 +181,6 @@ function AppInner() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [forceGame, setForceGame] = useState(false);
-  const [keepGameMounted, setKeepGameMounted] = useState(false);
 
   // Lives from backend + optimistic +1 after NFT send
   const livesCount = useOptimisticLives(address);
@@ -190,26 +189,13 @@ function AppInner() {
 
   // === Events from Tamagotchi ===
   useEffect(() => {
-    const onRequestNft = (e: CustomEvent) => {
-      setVaultOpen(true);
-    };
+    const onRequestNft = () => setVaultOpen(true);
 
     const onConfirmed = async () => {
       // Mark optimistic +1 life and keep game mounted
       if (address) ls.set(PENDING_LIFE_KEY, address);
       setVaultOpen(false);
       setForceGame(true);
-      setLivesCount((prev: any) => (prev > 0 ? prev : 1));
-      setPendingLife(address as any); // persist across reloads
-    };
-
-    // Local helpers to align with state setters above
-    const setLivesCount = (fn: (n: number) => number) => {
-      // noop wrapper; livesCount comes from hook polling backend
-    };
-    const setPendingLife = (addr?: string | null) => {
-      if (!addr) return;
-      ls.set(PENDING_LIFE_KEY, addr);
     };
 
     window.addEventListener("wg:request-nft", onRequestNft as any);
@@ -236,7 +222,7 @@ function AppInner() {
   }, []);
 
   const gate: "splash" | "locked" | "game" =
-    !isConnected && !keepGameMounted
+    !isConnected
       ? "splash"
       : forceGame || livesCount > 0
       ? "game"
@@ -299,37 +285,39 @@ function AppInner() {
       )}
 
       {gate === "locked" && (
-
-      {/* Mount game even when locked so DeathOverlay can show immediately */}
-      <div style={{ maxWidth: 980, margin: "0 auto" }}>
-        <Tamagotchi
-          key={tamagotchiKey}
-          walletAddress={activeAddr || undefined}
-          lives={0}
-        />
-      </div>
-        <section className="card splash" style={{ maxWidth: 640, margin: "24px auto" }}>
-          <div className="splash-inner">
-            <div className="splash-title" style={{ marginBottom: 8 }}>
-              No lives on this wallet
-            </div>
-            <div className="muted" style={{ marginBottom: 16, textAlign: "center" }}>
-              Send 1 NFT to the Vault to start. If another wallet already has a life,
-              switch to it and your pet will continue from there.
-            </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-              {!isConnected ? (
-                <button className="btn btn-primary btn-lg" onClick={() => setPickerOpen(true)}>
-                  Connect Wallet
-                </button>
-              ) : (
-                <button className="btn btn-primary btn-lg" onClick={() => setVaultOpen(true)}>
-                  Send NFT (+1 life)
-                </button>
-              )}
-            </div>
+        <>
+          {/* Mount game even when locked so DeathOverlay can show immediately */}
+          <div style={{ maxWidth: 980, margin: "0 auto" }}>
+            <Tamagotchi
+              key={tamagotchiKey}
+              walletAddress={activeAddr || undefined}
+              lives={0}
+            />
           </div>
-        </section>
+
+          <section className="card splash" style={{ maxWidth: 640, margin: "24px auto" }}>
+            <div className="splash-inner">
+              <div className="splash-title" style={{ marginBottom: 8 }}>
+                No lives on this wallet
+              </div>
+              <div className="muted" style={{ marginBottom: 16, textAlign: "center" }}>
+                Send 1 NFT to the Vault to start. If another wallet already has a life,
+                switch to it and your pet will continue from there.
+              </div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+                {!isConnected ? (
+                  <button className="btn btn-primary btn-lg" onClick={() => setPickerOpen(true)}>
+                    Connect Wallet
+                  </button>
+                ) : (
+                  <button className="btn btn-primary btn-lg" onClick={() => setVaultOpen(true)}>
+                    Send NFT (+1 life)
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+        </>
       )}
 
       {gate === "game" && (
@@ -383,7 +371,6 @@ function AppInner() {
         </div>
       )}
 
-      {/* Footer */}
       <footer className="footer">
         <div className="muted">Monad testnet mini-app • Woolly Eggs</div>
       </footer>
