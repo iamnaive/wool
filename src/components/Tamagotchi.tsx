@@ -534,13 +534,18 @@ export default function Tamagotchi({
   };
 
   /** Spend life once on death */
-  useEffect(() => {
-    if (isDead && !lifeSpentForThisDeath) {
-      onLoseLife?.();
-      setLifeSpentForThisDeath(true);
-      window.dispatchEvent(new CustomEvent("wg:pet-dead"));
-    }
-  }, [isDead]); // eslint-disable-line react-hooks/exhaustive-deps
+ useEffect(() => {
+  if (isDead && !lifeSpentForThisDeath) {
+    onLoseLife?.();
+
+    // Сигнал родителю/глобали: «списать жизнь»
+    try { window.dispatchEvent(new CustomEvent("wg:lose-life")); } catch {}
+
+    setLifeSpentForThisDeath(true);
+    window.dispatchEvent(new CustomEvent("wg:pet-dead"));
+  }
+}, [isDead]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   /** When new life confirmed → reset */
   useEffect(() => {
