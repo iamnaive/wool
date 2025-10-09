@@ -1,7 +1,7 @@
 // src/App.tsx
 // English-only comments.
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useAccount, useConnect, useDisconnect, useChainId } from "wagmi";
 
 import { MONAD } from "./utils/wagmiConfigLike";
@@ -13,14 +13,9 @@ import VaultPanel from "./components/VaultPanel";
 
 /* ---------- small helpers ---------- */
 const ls = {
-  get: (k: string) => {
-    try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; }
-  },
-  set: (k: string, v: any) => {
-    try { localStorage.setItem(k, JSON.stringify(v)); } catch {}
-  },
+  get: (k: string) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } },
+  set: (k: string, v: any) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
-
 const CHAIN_ID = MONAD.id;
 const PENDING_LIFE_KEY = "wg_pending_life";
 
@@ -51,7 +46,6 @@ function TopBar({ onOpenVault, onOpenConnect }: { onOpenVault: () => void; onOpe
 
   return (
     <header className="topbar" style={{ paddingRight: 8 }}>
-      {/* brand */}
       <div className="brand" style={{ gap: 10, minWidth: 240, whiteSpace: "nowrap", overflow: "hidden" }}>
         <div className="logo" style={{ display: "grid", placeItems: "center", marginRight: 2 }}>
           <span aria-hidden style={{ fontSize: 20, lineHeight: 1 }}>🥚</span>
@@ -61,20 +55,18 @@ function TopBar({ onOpenVault, onOpenConnect }: { onOpenVault: () => void; onOpe
         </div>
       </div>
 
-      {/* right side */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto", flexWrap: "wrap" }}>
         {isConnected ? (
           <>
-            <div className="pill" title="Lives">❤️ Lives: <b>{lives}</b></div>
-            <div className="pill" title="Network">{MONAD.name} • chain {chainId}</div>
-            <div className="pill" title="Address">{address?.slice(0, 6)}…{address?.slice(-4)}</div>
+            <div className="pill">❤️ Lives: <b>{lives}</b></div>
+            <div className="pill">{MONAD.name} • chain {chainId}</div>
+            <div className="pill">{address?.slice(0, 6)}…{address?.slice(-4)}</div>
             <button className="btn" onClick={onOpenVault} title="Send 1 NFT → +1 life">Get life</button>
             <button className="btn btn-ghost" onClick={() => disconnect()}>Disconnect</button>
             <MuteButton />
           </>
         ) : (
           <>
-            {/* single Connect entry point (no duplicated buttons on the header) */}
             <button className="btn btn-primary" onClick={onOpenConnect}>Connect</button>
             <MuteButton />
           </>
@@ -96,7 +88,6 @@ function AppInner() {
   const livesCount = useOptimisticLives(address);
   const activeAddr = address ?? null;
 
-  // Game events <-> UI wiring
   useEffect(() => {
     const onRequestNft = () => setVaultOpen(true);
     const onConfirmed = () => {
@@ -111,7 +102,6 @@ function AppInner() {
       setVaultOpen(false);
       setForceGame(true);
     };
-
     window.addEventListener("wg:request-nft", onRequestNft as any);
     window.addEventListener("wg:nft-confirmed", onConfirmed as any);
     return () => {
@@ -134,9 +124,7 @@ function AppInner() {
           <div className="splash-inner">
             <div className="splash-title">Wooligotchi</div>
             <div className="muted">Send 1 NFT → get 1 life (to the Vault)</div>
-            <button className="btn btn-primary btn-lg" onClick={() => setConnectOpen(true)}>
-              Connect Wallet
-            </button>
+            <button className="btn btn-primary btn-lg" onClick={() => setConnectOpen(true)}>Connect Wallet</button>
           </div>
         </section>
       )}
@@ -144,14 +132,8 @@ function AppInner() {
       {gate === "locked" && (
         <>
           <div style={{ maxWidth: 980, margin: "0 auto" }}>
-            <Tamagotchi
-              key={tamaKey}
-              walletAddress={activeAddr || undefined}
-              currentForm={"egg" as any}
-              lives={0}
-            />
+            <Tamagotchi key={tamaKey} walletAddress={activeAddr || undefined} currentForm={"egg" as any} lives={0} />
           </div>
-
           <section className="card splash" style={{ maxWidth: 640, margin: "24px auto" }}>
             <div className="splash-inner">
               <div className="splash-title" style={{ marginBottom: 8 }}>No lives on this wallet</div>
@@ -160,13 +142,9 @@ function AppInner() {
               </div>
               <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
                 {!isConnected ? (
-                  <button className="btn btn-primary btn-lg" onClick={() => setConnectOpen(true)}>
-                    Connect Wallet
-                  </button>
+                  <button className="btn btn-primary btn-lg" onClick={() => setConnectOpen(true)}>Connect Wallet</button>
                 ) : (
-                  <button className="btn btn-primary btn-lg" onClick={() => setVaultOpen(true)}>
-                    Send NFT (+1 life)
-                  </button>
+                  <button className="btn btn-primary btn-lg" onClick={() => setVaultOpen(true)}>Send NFT (+1 life)</button>
                 )}
               </div>
             </div>
@@ -176,40 +154,26 @@ function AppInner() {
 
       {gate === "game" && (
         <div style={{ maxWidth: 980, margin: "0 auto" }}>
-          <Tamagotchi
-            key={tamaKey}
-            walletAddress={activeAddr || undefined}
-            currentForm={"egg" as any}
-            lives={livesCount}
-          />
+          <Tamagotchi key={tamaKey} walletAddress={activeAddr || undefined} currentForm={"egg" as any} lives={livesCount} />
         </div>
       )}
 
-      {/* connect modal */}
-      {connectOpen && (
-        <ConnectModal onClose={() => setConnectOpen(false)} />
-      )}
-
-      {/* vault modal */}
+      {connectOpen && <ConnectModal onClose={() => setConnectOpen(false)} />}
       {vaultOpen && (
         <div onClick={() => setVaultOpen(false)} className="modal">
           <div onClick={(e) => e.stopPropagation()} className="card" style={{ width: 520, maxWidth: "92vw" }}>
-            <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>
-              Send 1 NFT → +1 life
-            </div>
+            <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>Send 1 NFT → +1 life</div>
             <VaultPanel />
           </div>
         </div>
       )}
 
-      <footer className="footer">
-        <div className="muted">Monad testnet mini-app • Wooligotchi</div>
-      </footer>
+      <footer className="footer"><div className="muted">Monad testnet mini-app • Wooligotchi</div></footer>
     </div>
   );
 }
 
-/* ---------- connect modal driven strictly by wagmi connectors ---------- */
+/* ---------- connect modal ---------- */
 function ConnectModal({ onClose }: { onClose: () => void }) {
   return (
     <div onClick={onClose} className="modal">
@@ -224,39 +188,57 @@ function ConnectModal({ onClose }: { onClose: () => void }) {
 function WalletButtons() {
   const { connect, connectors } = useConnect();
 
+  // Map wagmi connectors to explicit labels + readiness checks
+  const list = useMemo(() => {
+    const hasMetaMask =
+      !!(globalThis as any).ethereum?.isMetaMask ||
+      Array.isArray((globalThis as any).ethereum?.providers) &&
+      (globalThis as any).ethereum.providers.some((p: any) => p?.isMetaMask);
+
+    const hasPhantom = !!(globalThis as any).phantom?.ethereum;
+
+    return connectors.map((c) => {
+      const opts: any = (c as any).options ?? {};
+      let label = c.name;
+
+      if (c.type === "injected") {
+        if (opts?.target === "metaMask") label = "MetaMask";
+        else if (typeof opts?.getProvider === "function") label = "Phantom";
+        else label = hasMetaMask ? "MetaMask" : "Injected";
+      } else if (/walletconnect/i.test(c.name)) {
+        label = "WalletConnect";
+      } else if (/coinbase/i.test(c.name)) {
+        label = "Coinbase Wallet";
+      }
+
+      // our own readiness for injected ones
+      const ready =
+        label === "MetaMask" ? hasMetaMask :
+        label === "Phantom" ? hasPhantom :
+        true;
+
+      return { c, key: (c as any).id ?? (c as any).uid ?? label, label, disabled: c.type === "injected" && !ready };
+    });
+  }, [connectors]);
+
   return (
     <div className="wallet-grid">
-      {connectors.map((c) => {
-        const opts = (c as any).options ?? {};
-        // Prefer explicit labels by target; fallback to wagmi name
-        const label =
-          opts?.target === "metaMask" ? "MetaMask" :
-          opts?.target === "phantom" ? "Phantom" :
-          c.name;
-
-        // Only disable injected if that exact target is not present.
-        // WalletConnect / Coinbase stay clickable.
-        const isInjected = (c.type as string) === "injected";
-        const disabled = isInjected && !c.ready;
-
-        return (
-          <button
-            key={(c as any).id ?? (c as any).uid ?? label}
-            className="btn"
-            disabled={disabled}
-            title={disabled ? `${label} not installed` : `Connect with ${label}`}
-            onClick={() => connect({ connector: c })}
-          >
-            {label}
-          </button>
-        );
-      })}
+      {list.map(({ c, key, label, disabled }) => (
+        <button
+          key={key}
+          className="btn"
+          disabled={disabled}
+          title={disabled ? `${label} not installed` : `Connect with ${label}`}
+          onClick={() => connect({ connector: c })}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }
 
-
-/* Export with audio provider (wagmi/query providers live in main.tsx) */
+/* ---------- export ---------- */
 export default function App() {
   return (
     <AudioProvider>
