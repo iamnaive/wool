@@ -1,17 +1,21 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import "./styles.css"; // global styles
+import "./styles.css";
 
-// Create TanStack Query client (wagmi v2 depends on it)
+import { WagmiProvider } from "wagmi";
+import { config } from "./utils/wagmiConfigLike";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
 const queryClient = new QueryClient();
 
 const el = document.getElementById("root");
 if (el) {
   createRoot(el).render(
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
+    <WagmiProvider config={config}>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </WagmiProvider>
   );
 }
