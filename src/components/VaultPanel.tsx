@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Address } from "viem";
+const ZERO = "0x0000000000000000000000000000000000000000" as Address;
 import { zeroAddress } from "viem";
 import { useAccount, useConfig, useSwitchChain } from "wagmi";
 import { writeContract, getPublicClient } from "@wagmi/core";
@@ -22,7 +23,7 @@ import { writeContract, getPublicClient } from "@wagmi/core";
  */
 
 const MONAD_CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID ?? 10143);
-const VAULT: Address = (import.meta.env.VITE_VAULT_ADDRESS as Address) ?? zeroAddress;
+const VAULT: Address = (import.meta.env.VITE_VAULT_ADDRESS as Address) ?? ZERO;
 const ALLOWED_CONTRACT: Address = "0x88c78d5852f45935324c6d100052958f694e8446";
 
 const ERC721_WRITE_ABI = [
