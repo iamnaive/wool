@@ -15,10 +15,11 @@ import {
 import { injected, walletConnect, coinbaseWallet } from "wagmi/connectors";
 import { defineChain } from "viem";
 
-import Tamagotchi from "./components/Tamagotchi";
-import VaultPanel from "./components/VaultPanel";
-import { MuteButton } from "./audio/MuteButton";
-import AudioProvider from "./audio/AudioProvider";
+// IMPORTANT: imports point to files in the same folder as App.tsx
+import Tamagotchi from "./Tamagotchi";
+import VaultPanel from "./VaultPanel";
+import MuteButton from "./MuteButton";        // if your MuteButton is a named export, change to:  import { MuteButton } from "./MuteButton";
+import AudioProvider from "./AudioProvider";  // keep as default
 import "./styles.css";
 
 /* ---------- ENV & Network ---------- */
@@ -167,18 +168,19 @@ function AppInner() {
     return () => window.removeEventListener("wg:wool-collect-request" as any, onCollect as any);
   }, [address, chainId, woolBalance, woolToday, woolCap]);
 
-  /** IMPORTANT: audio events from game (your game dispatches "wg:fed" on feed) */
+  /** IMPORTANT: audio events from game (Tamagotchi dispatches "wg:feed" on feeding) */
   useEffect(() => {
-    const onFed = () => window.dispatchEvent(new CustomEvent("wg:audio:feed")); // AudioManager listens internally
+    const onFeed = () => window.dispatchEvent(new CustomEvent("wg:audio:feed"));
     const onCatOn  = () => window.dispatchEvent(new CustomEvent("wg:audio:catastrophe-on"));
     const onCatOff = () => window.dispatchEvent(new CustomEvent("wg:audio:catastrophe-off"));
 
-    window.addEventListener("wg:fed", onFed as any); // <- your event name
+    // FIX: listen to "wg:feed" (not "wg:fed")
+    window.addEventListener("wg:feed", onFeed as any);
     window.addEventListener("wg:catastrophe-start", onCatOn as any);
     window.addEventListener("wg:catastrophe-end", onCatOff as any);
 
     return () => {
-      window.removeEventListener("wg:fed", onFed as any);
+      window.removeEventListener("wg:feed", onFeed as any);
       window.removeEventListener("wg:catastrophe-start", onCatOn as any);
       window.removeEventListener("wg:catastrophe-end", onCatOff as any);
     };
