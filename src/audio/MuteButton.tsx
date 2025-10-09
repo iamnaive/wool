@@ -1,26 +1,19 @@
 // src/audio/MuteButton.tsx
-import React, { useEffect, useState } from "react";
-import { audio } from "./AudioManager";
+// Small mute/unmute toggle button using AudioProvider state.
 
-/**
- * Tiny mute toggle. Works even before audio.init():
- * the flag is applied once AudioProvider arms the system.
- */
-export function MuteButton() {
-  const [muted, setMuted] = useState(false);
+import React from "react";
+import { useAudio } from "./AudioProvider";
 
-  useEffect(() => {
-    audio.setMuted(muted);
-  }, [muted]);
-
+export default function MuteButton() {
+  const { muted, setMuted, armed } = useAudio();
   return (
     <button
-      className="btn"
-      onClick={() => setMuted((m) => !m)}
-      title={muted ? "Unmute sound" : "Mute sound"}
-      style={{ marginRight: 8 }}
+      title={armed ? (muted ? "Unmute" : "Mute") : "Tap to enable audio"}
+      onClick={() => setMuted(!muted)}
+      className="btn btn--mute"
+      style={{ opacity: armed ? 1 : 0.8 }}
     >
-      {muted ? "🔇 Mute" : "🔊 Sound"}
+      {muted ? "🔇" : "🔊"}
     </button>
   );
 }
