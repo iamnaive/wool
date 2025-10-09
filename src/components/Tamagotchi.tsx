@@ -996,13 +996,47 @@ export default function Tamagotchi({
           pointerEvents: (isDead || forceDeadPreview) ? ("none" as const) : ("auto" as const),
         }}
       >
-        <button
-          className="btn"
-          disabled
-          title="Coming soon"
-          style={{ opacity: 0.45, cursor: "not-allowed" }}
-        >
-          🧶 WOOL
+        {(() => {
+  // Minimal adult check compatible with your forms:
+  // adult = not egg and not *_child
+  const isAdult =
+    form !== "egg" && !String(form).endsWith("_child");
+
+  // These props will be passed from App.tsx.
+  // If you haven't wired them yet, defaults are safe.
+  const cap   = (props as any)?.woolCap ?? 5;
+  const today = (props as any)?.woolToday ?? 0;
+
+  // Don't allow when dead or in dead preview
+  const canCollect =
+    isAdult && !isDead && !forceDeadPreview && today < cap;
+
+  const onWoolClick = () => {
+    // Ask App.tsx to collect. App should:
+    //  - POST /wool/collect
+    //  - dispatch "wg:wool-updated" on success
+    const ev = new CustomEvent("wg:wool-collect-request", { detail: {} });
+    window.dispatchEvent(ev);
+  };
+
+  return (
+    <button
+      className="btn"
+      onClick={onWoolClick}
+      disabled={!canCollect}
+      title={
+        !isAdult
+          ? "Only adults can collect WOOL"
+          : today >= cap
+          ? `Daily cap reached (${today}/${cap})`
+          : "Collect WOOL"
+      }
+    >
+      🧶 WOOL{typeof today === "number" ? ` (${today}/${cap})` : ""}
+    </button>
+  );
+})()}
+
         </button>
 
         <button className="btn" onClick={act.feedBurger} disabled={burgerLeft>0}>🍔 Burger{burgerLeft>0?` (${Math.ceil(burgerLeft/1000)}s)`:``}</button>
