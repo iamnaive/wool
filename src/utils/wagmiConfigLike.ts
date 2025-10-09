@@ -1,17 +1,20 @@
 // src/utils/wagmiConfigLike.ts
-// Safe wagmi v2 config for Monad testnet
+// Safe wagmi v2 config for Monad testnet + WalletConnect (reads both env keys)
 
 import { createConfig, http, fallback } from "wagmi";
 import { injected, coinbaseWallet, walletConnect } from "wagmi/connectors";
 import { defineChain } from "viem";
 
-// ---- ENV ----
+// --- ENV ---
 const CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID ?? 10143);
 const RPC_URL = String(import.meta.env.VITE_RPC_URL ?? "https://testnet.monad-rpc.org");
-const WC_PROJECT_ID = (import.meta.env.VITE_WC_PROJECT_ID as string | undefined) || undefined;
 const APP_NAME = String(import.meta.env.VITE_APP_NAME ?? "Wooligotchi");
+// Accept both names for project id
+const WC_PROJECT_ID =
+  (import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as string | undefined) ??
+  (import.meta.env.VITE_WC_PROJECT_ID as string | undefined);
 
-// ---- Chain ----
+// --- Chain ---
 export const MONAD = defineChain({
   id: CHAIN_ID,
   name: "Monad Testnet",
@@ -22,7 +25,7 @@ export const MONAD = defineChain({
   },
 });
 
-// ---- Connectors (safe) ----
+// --- Connectors (safe) ---
 const connectors = [
   injected({
     shimDisconnect: true,
@@ -47,12 +50,12 @@ const connectors = [
     : []),
 ];
 
-// ---- Transports ----
+// --- Transports ---
 const transports = {
   [MONAD.id]: fallback([http(RPC_URL)]),
 };
 
-// ---- Config ----
+// --- Config ---
 export const config = createConfig({
   chains: [MONAD],
   connectors,
