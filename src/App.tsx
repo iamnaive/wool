@@ -284,41 +284,43 @@ function AppInner() {
         </section>
       )}
 
-      {gate === "locked" && (
-        <>
-          {/* Mount game even when locked so DeathOverlay can show immediately */}
-          <div style={{ maxWidth: 980, margin: "0 auto" }}>
-            <Tamagotchi
-              key={tamagotchiKey}
-              walletAddress={activeAddr || undefined}
-              lives={0}
-            />
-          </div>
+     {gate === "locked" && (
+  <>
+    {/* Mount game even when locked so DeathOverlay can show immediately */}
+    <div style={{ maxWidth: 980, margin: "0 auto" }}>
+      <Tamagotchi
+        key={tamagotchiKey}
+        walletAddress={activeAddr || undefined}
+        lives={0}
+      />
+    </div>
 
-          <section className="card splash" style={{ maxWidth: 640, margin: "24px auto" }}>
-            <div className="splash-inner">
-              <div className="splash-title" style={{ marginBottom: 8 }}>
-                No lives on this wallet
-              </div>
-              <div className="muted" style={{ marginBottom: 16, textAlign: "center" }}>
-                Send 1 NFT to the Vault to start. If another wallet already has a life,
-                switch to it and your pet will continue from there.
-              </div>
-              <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-                {!isConnected ? (
-                  <button className="btn btn-primary btn-lg" onClick={() => setPickerOpen(true)}>
-                    Connect Wallet
-                  </button>
-                ) : (
-                  <button className="btn btn-primary btn-lg" onClick={() => setVaultOpen(true)}>
-                    Send NFT (+1 life)
-                  </button>
-                )}
-              </div>
-            </div>
-          </section>
-        </>
-      )}
+    {/* Your existing "No lives..." card can stay below */}
+    <section className="card splash" style={{ maxWidth: 640, margin: "24px auto" }}>
+      <div className="splash-inner">
+        <div className="splash-title" style={{ marginBottom: 8 }}>
+          No lives on this wallet
+        </div>
+        <div className="muted" style={{ marginBottom: 16, textAlign: "center" }}>
+          Send 1 NFT to the Vault to start. If another wallet already has a life,
+          switch to it and your pet will continue from there.
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+          {!isConnected ? (
+            <button className="btn btn-primary btn-lg" onClick={() => setPickerOpen(true)}>
+              Connect Wallet
+            </button>
+          ) : (
+            <button className="btn btn-primary btn-lg" onClick={() => setVaultOpen(true)}>
+              Send NFT (+1 life)
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
+  </>
+)}
+
 
       {gate === "game" && (
         <div style={{ maxWidth: 980, margin: "0 auto" }}>
