@@ -6,14 +6,5 @@ export default defineConfig({
   plugins: [react()],
   build: {
     sourcemap: false,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          wagmi: ["wagmi"],
-          viem: ["viem"],
-          query: ["@tanstack/react-query"],
-        },
-      },
-    },
   },
 });
