@@ -31,7 +31,7 @@ const ls = {
 
 const CHAIN_ID = MONAD.id;
 
-/** ===== Small hooks / helpers preserved ===== */
+/** ===== Hooks ===== */
 function useIsLocked(chainId: number | null, address: string | null) {
   const [locked, setLocked] = useState(true);
   useEffect(() => {
@@ -57,42 +57,36 @@ function useOptimisticLives(address: string | undefined) {
   return lives;
 }
 
-/** ===== UI ===== */
-function ConnectBar() {
+/** ===== UI bits ===== */
+function ConnectStrip() {
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
   const chainId = useChainId();
 
-  return (
-    <div className="connectbar">
-      {isConnected ? (
-        <div className="row">
-          <div className="pill">
-            {address?.slice(0, 6)}…{address?.slice(-4)} • chain {chainId}
-          </div>
-          <button className="btn" onClick={() => disconnect()}>
-            Disconnect
-          </button>
-          {/* Global audio mute toggle */}
-          <MuteButton />
-        </div>
-      ) : (
-        <div className="row">
-          {connectors.map((c) => (
-            <button
-              key={c.uid}
-              disabled={!c.ready || isPending}
-              className="btn"
-              onClick={() => connect({ connector: c })}
-            >
-              {c.name}
-            </button>
-          ))}
-          {/* Audio toggle is visible; provider will arm on first user gesture */}
-          <MuteButton />
-        </div>
-      )}
+  return isConnected ? (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div className="pill">
+        {address?.slice(0, 6)}…{address?.slice(-4)} • chain {chainId}
+      </div>
+      <button className="btn" onClick={() => disconnect()}>
+        Disconnect
+      </button>
+      <MuteButton />
+    </div>
+  ) : (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      {connectors.map((c) => (
+        <button
+          key={c.uid}
+          disabled={!c.ready || isPending}
+          className="btn"
+          onClick={() => connect({ connector: c })}
+        >
+          {c.name}
+        </button>
+      ))}
+      <MuteButton />
     </div>
   );
 }
@@ -136,30 +130,31 @@ function AppInner() {
   }, [address]);
 
   return (
-    <div className="layout">
-      <header className="header">
-        <div className="logo">Woolly Eggs</div>
-        <ConnectBar />
-      </header>
-
-      <main className="content">
-        {/* When locked: still mount the game so DeathOverlay can show after offline death */}
-        <div className="stage">
-          <Tamagotchi
-            chainId={CHAIN_ID}
-            address={activeAddr}
-            lives={livesCount}
-            locked={locked && !forceGame}
-            onUnlock={() => setLocked(false)}
-            onOpenPicker={() => setPickerOpen(true)}
-            onRequestNft={() => setVaultOpen(true)}
-          />
+    <div className="page">
+      {/* Top bar matches .topbar styles */}
+      <div className="topbar">
+        <div className="brand" style={{ gap: 10 }}>
+          <div className="logo" />
+          <div className="title" style={{ fontWeight: 700 }}>Woolly Eggs</div>
         </div>
-      </main>
+        <ConnectStrip />
+      </div>
 
-      <footer className="footer">
-        <div className="muted">Monad testnet mini-app • Woolly Eggs</div>
-      </footer>
+      {/* Stage area styled by .stage from styles.css */}
+      <div className="stage" style={{ display: "grid", placeItems: "center", padding: 16 }}>
+        <Tamagotchi
+          chainId={CHAIN_ID}
+          address={activeAddr}
+          lives={livesCount}
+          locked={locked && !forceGame}
+          onUnlock={() => setLocked(false)}
+          onOpenPicker={() => setPickerOpen(true)}
+          onRequestNft={() => setVaultOpen(true)}
+        />
+      </div>
+
+      {/* Optional footer not required by your CSS, можно оставить пустым */}
+      {/* <div className="footer muted">Monad testnet mini-app • Woolly Eggs</div> */}
 
       {pickerOpen && (
         <div onClick={() => setPickerOpen(false)} className="modal">
@@ -197,7 +192,7 @@ function AppInner() {
 export default function App() {
   return (
     <WagmiProvider config={config}>
-      {/* Centralized audio: will arm and use /audio/*.mp3 (public/audio) after user gesture */}
+      {/* Centralized audio: uses /audio/*.mp3 from public/audio after user gesture */}
       <AudioProvider>
         <AppInner />
       </AudioProvider>
