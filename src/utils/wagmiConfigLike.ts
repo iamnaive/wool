@@ -26,7 +26,6 @@ export const MONAD = defineChain({
 const connectors = [
   injected({
     shimDisconnect: true,
-    //
   }),
   coinbaseWallet({
     appName: APP_NAME,
@@ -59,6 +58,5 @@ export const config = createConfig({
   connectors,
   transports,
   ssr: true,
-  /
   multiInjectedProviderDiscovery: true,
 });
