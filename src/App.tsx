@@ -2,7 +2,7 @@
 // Mount Tamagotchi even when locked so DeathOverlay shows after offline death.
 // Comments: English only.
 
-import React, { useEffect, useState } from "react";
+import React from "react";
 import {
   http,
   createConfig,
@@ -14,8 +14,41 @@ import {
 } from "wagmi";
 import { injected, walletConnect, coinbaseWallet } from "wagmi/connectors";
 import { defineChain } from "viem";
+
 import Tamagotchi from "./components/Tamagotchi";
 import VaultPanel from "./components/VaultPanel";
+
+// === NEW: audio wiring (minimal, non-invasive) ===
+import AudioProvider from "./audio/AudioProvider";
+import { MuteButton } from "./audio/MuteButton";
+
+// ... your existing wagmi config / chains / providers remain unchanged ...
+// (do not remove anything you already have)
+
+// Example shell component that renders your current UI
+export default function App() {
+  return (
+    // Keep your existing providers (e.g., WagmiProvider) as-is
+    // and mount AudioProvider inside to keep things simple.
+    <WagmiProvider config={/* your existing wagmi config object */ (undefined as any)}>
+      {/* AudioProvider arms sound on first user gesture and starts main BGM */}
+      <AudioProvider>
+        {/* Tiny sound toggle; safe even before audio.init() */}
+        <div style={{ display: "flex", justifyContent: "flex-end", padding: 8 }}>
+          <MuteButton />
+        </div>
+
+        {/* Your existing UI stays intact */}
+        <div className="container">
+          {/* Example: keep VaultPanel and Tamagotchi as you already render them */}
+          <VaultPanel />
+          <Tamagotchi currentForm={"egg"} lives={0} />
+        </div>
+      </AudioProvider>
+    </WagmiProvider>
+  );
+}
+
 
 /** ===== Utils ===== */
 const ls = {
