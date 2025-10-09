@@ -179,41 +179,38 @@ function ConnectModal({ onClose }: { onClose: () => void }) {
     <div onClick={onClose} className="modal">
       <div onClick={(e) => e.stopPropagation()} className="card" style={{ width: 460, maxWidth: "92vw" }}>
         <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>Connect a wallet</div>
-        <WalletButtons />
+        <WalletButtons onDone={onClose} />
       </div>
     </div>
   );
 }
 
-function WalletButtons() {
-  const { connect, connectors } = useConnect();
+function WalletButtons({ onDone }: { onDone?: () => void }) {
+  // use connectAsync so we can await and close modal reliably
+  const { connectAsync, connectors } = useConnect();
 
-  // Normalize our connectors into a clean, unique, branded list
   const list = React.useMemo(() => {
     const mapLabel = (c: any): { label: string; ready: boolean } => {
       const opts: any = c.options ?? {};
-      // Brand by explicit target or by presence of a brand-specific provider
-      if (opts?.target === "metaMask") {
+      if (c.type === "injected" && opts?.target === "metaMask") {
         const ready =
           !!(window as any).ethereum?.isMetaMask ||
           (Array.isArray((window as any).ethereum?.providers) &&
             (window as any).ethereum.providers.some((p: any) => p?.isMetaMask));
         return { label: "MetaMask", ready };
       }
-      if (typeof opts?.getProvider === "function") {
-        // Probe which provider this connector points to (no side effects)
+      if (c.type === "injected" && typeof opts?.getProvider === "function") {
         const p = opts.getProvider();
-        const isPhantom = !!(p && (p as any).isPhantom);
+        const isPhantom  = !!(p && (p as any).isPhantom);
         const isBackpack = !!(p && (p as any).isBackpack);
-        const isKeplr = !!(p && ((p as any).isKeplr || (p as any).isKeplrEvm));
-        if (isPhantom) return { label: "Phantom", ready: true };
+        const isKeplr    = !!(p && ((p as any).isKeplr || (p as any).isKeplrEvm));
+        if (isPhantom)  return { label: "Phantom",  ready: true };
         if (isBackpack) return { label: "Backpack", ready: true };
-        if (isKeplr) return { label: "Keplr", ready: true };
-        // If provider is null/undefined -> not installed
+        if (isKeplr)    return { label: "Keplr",    ready: true };
         return { label: "Injected", ready: !!p };
       }
       if (/walletconnect/i.test(c.name)) return { label: "WalletConnect", ready: true };
-      if (/coinbase/i.test(c.name)) return { label: "Coinbase Wallet", ready: true };
+      if (/coinbase/i.test(c.name))     return { label: "Coinbase Wallet", ready: true };
       return { label: c.name, ready: true };
     };
 
@@ -224,7 +221,7 @@ function WalletButtons() {
         key: (c as any).id ?? (c as any).uid ?? label,
         label,
         connector: c,
-        disabled: isInjected && !ready, // WC/CB always clickable
+        disabled: isInjected && !ready,
         prio:
           label === "MetaMask" ? 1 :
           label === "Phantom" ? 2 :
@@ -235,7 +232,6 @@ function WalletButtons() {
       };
     });
 
-    // Keep only first instance per label, and keep only the brands we care about
     const allow = new Set(["MetaMask", "Phantom", "Backpack", "Keplr", "WalletConnect", "Coinbase Wallet"]);
     const seen = new Set<string>();
     return items
@@ -256,7 +252,14 @@ function WalletButtons() {
           className="btn"
           disabled={disabled}
           title={disabled ? `${label} not installed` : `Connect with ${label}`}
-          onClick={() => connect({ connector })}
+          onClick={async () => {
+            try {
+              await connectAsync({ connector });
+              onDone?.(); // close modal immediately on success
+            } catch {
+              // keep modal open so user can try another connector
+            }
+          }}
         >
           {label}
         </button>
