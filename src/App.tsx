@@ -1,7 +1,7 @@
 // src/App.tsx
 // English-only comments.
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useAccount, useConnect, useDisconnect, useChainId } from "wagmi";
 
 import { MONAD } from "./utils/wagmiConfigLike";
@@ -43,11 +43,10 @@ function useOptimisticLives(address?: string | null) {
 }
 
 /* ---------- header ---------- */
-function TopBar({ onOpenVault }: { onOpenVault: () => void }) {
+function TopBar({ onOpenVault, onOpenConnect }: { onOpenVault: () => void; onOpenConnect: () => void }) {
   const { address, isConnected } = useAccount();
-  const { connect, connectors, isPending } = useConnect();
-  const { disconnect } = useDisconnect();
   const chainId = useChainId();
+  const { disconnect } = useDisconnect();
   const lives = useOptimisticLives(address);
 
   return (
@@ -75,22 +74,8 @@ function TopBar({ onOpenVault }: { onOpenVault: () => void }) {
           </>
         ) : (
           <>
-            {connectors.map((c) => {
-              const key = (c as any).id ?? (c as any).uid ?? c.name;
-              const disabled = !c.ready; // do not block on "pending"
-              const title = !c.ready ? "Not installed" : `Connect with ${c.name}`;
-              return (
-                <button
-                  key={key}
-                  className="btn"
-                  disabled={disabled}
-                  title={title}
-                  onClick={() => connect({ connector: c })}
-                >
-                  {c.name}
-                </button>
-              );
-            })}
+            {/* single Connect entry point (no duplicated buttons on the header) */}
+            <button className="btn btn-primary" onClick={onOpenConnect}>Connect</button>
             <MuteButton />
           </>
         )}
@@ -104,7 +89,7 @@ function AppInner() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
 
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [forceGame, setForceGame] = useState(false);
 
@@ -142,14 +127,14 @@ function AppInner() {
 
   return (
     <div className="wrap">
-      <TopBar onOpenVault={() => setVaultOpen(true)} />
+      <TopBar onOpenVault={() => setVaultOpen(true)} onOpenConnect={() => setConnectOpen(true)} />
 
       {gate === "splash" && (
         <section className="card splash">
           <div className="splash-inner">
             <div className="splash-title">Wooligotchi</div>
             <div className="muted">Send 1 NFT → get 1 life (to the Vault)</div>
-            <button className="btn btn-primary btn-lg" onClick={() => setPickerOpen(true)}>
+            <button className="btn btn-primary btn-lg" onClick={() => setConnectOpen(true)}>
               Connect Wallet
             </button>
           </div>
@@ -175,7 +160,7 @@ function AppInner() {
               </div>
               <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
                 {!isConnected ? (
-                  <button className="btn btn-primary btn-lg" onClick={() => setPickerOpen(true)}>
+                  <button className="btn btn-primary btn-lg" onClick={() => setConnectOpen(true)}>
                     Connect Wallet
                   </button>
                 ) : (
@@ -201,16 +186,8 @@ function AppInner() {
       )}
 
       {/* connect modal */}
-      {pickerOpen && (
-        <div onClick={() => setPickerOpen(false)} className="modal">
-          <div onClick={(e) => e.stopPropagation()} className="card" style={{ width: 460, maxWidth: "92vw" }}>
-            <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>
-              Connect a wallet
-            </div>
-
-            <WalletButtons />
-          </div>
-        </div>
+      {connectOpen && (
+        <ConnectModal onClose={() => setConnectOpen(false)} />
       )}
 
       {/* vault modal */}
@@ -232,18 +209,47 @@ function AppInner() {
   );
 }
 
-/* Standalone buttons list so it can be reused */
+/* ---------- connect modal driven strictly by wagmi connectors ---------- */
+function ConnectModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div onClick={onClose} className="modal">
+      <div onClick={(e) => e.stopPropagation()} className="card" style={{ width: 460, maxWidth: "92vw" }}>
+        <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>Connect a wallet</div>
+        <WalletButtons />
+      </div>
+    </div>
+  );
+}
+
 function WalletButtons() {
   const { connect, connectors } = useConnect();
 
+  // Filter & label: only actual wagmi connectors, dedupe by name
+  const list = useMemo(() => {
+    const items = connectors.map((c) => {
+      const isInjected = (c.type as string) === "injected";
+      const label =
+        isInjected && (globalThis as any).ethereum?.isMetaMask ? "MetaMask" :
+        isInjected ? "Injected" :
+        c.name;
+      return { c, label, isInjected };
+    });
+
+    const seen = new Set<string>();
+    return items.filter((it) => {
+      if (seen.has(it.label)) return false;
+      seen.add(it.label);
+      return ["Injected", "MetaMask", "WalletConnect", "Coinbase Wallet"].includes(it.label);
+    });
+  }, [connectors]);
+
   return (
     <div className="wallet-grid">
-      {connectors.map((c) => {
-        const key = (c as any).id ?? (c as any).uid ?? c.name;
-        const isInjected = (c.type as string) === "injected";
-        // For injected we can gray out when not installed; for WC/Coinbase let it be clickable.
+      {list.map(({ c, label, isInjected }) => {
+        const key = (c as any).id ?? (c as any).uid ?? label;
+        // Only disable injected when provider is not present; WC/CB stay clickable
         const disabled = isInjected && !c.ready;
-        const title = !disabled ? `Connect with ${c.name}` : "Not installed";
+        const title = !disabled ? `Connect with ${label}` : "Not installed";
 
         return (
           <button
@@ -253,14 +259,13 @@ function WalletButtons() {
             title={title}
             onClick={() => connect({ connector: c })}
           >
-            {c.name}
+            {label}
           </button>
         );
       })}
     </div>
   );
 }
-
 
 /* Export with audio provider (wagmi/query providers live in main.tsx) */
 export default function App() {
