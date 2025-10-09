@@ -2,10 +2,9 @@
 // English-only comments.
 
 import React, { useEffect, useState } from "react";
-import { WagmiProvider, useAccount, useConnect, useDisconnect, useChainId } from "wagmi";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useAccount, useConnect, useDisconnect, useChainId } from "wagmi";
 
-import { config, MONAD } from "./utils/wagmiConfigLike";
+import { MONAD } from "./utils/wagmiConfigLike";
 import { AudioProvider } from "./audio/AudioProvider";
 import MuteButton from "./audio/MuteButton";
 
@@ -77,8 +76,8 @@ function TopBar() {
       style={{
         paddingRight: 8,
         position: "relative",
-        zIndex: 50,             // поверх всего
-        pointerEvents: "auto",  // клики включены
+        zIndex: 50,
+        pointerEvents: "auto",
       }}
     >
       {/* Brand */}
@@ -164,7 +163,7 @@ function AppInner() {
     <div className="page" style={{ pointerEvents: "auto" }}>
       <TopBar />
 
-      {/* Stage — ниже шапки по слою */}
+      {/* Stage — below header */}
       <div className="stage" style={{ display: "grid", placeItems: "center", padding: 16, position: "relative", zIndex: 1 }}>
         <Tamagotchi
           chainId={CHAIN_ID}
@@ -195,23 +194,17 @@ function AppInner() {
         </div>
       )}
 
-      {/* remove after проверки */}
+      {/* remove after checks */}
       <DebugPill />
     </div>
   );
 }
 
-/** ===== providers root ===== */
-const queryClient = new QueryClient();
-
 export default function App() {
+  // Providers live in main.tsx. Keep only AudioProvider here.
   return (
-    <WagmiProvider config={config}>
-      <QueryClientProvider client={queryClient}>
-        <AudioProvider>
-          <AppInner />
-        </AudioProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
+    <AudioProvider>
+      <AppInner />
+    </AudioProvider>
   );
 }
