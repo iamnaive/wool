@@ -39,6 +39,8 @@ const ls = {
   },
 };
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 /** ===== Audio (simple bus) ===== */
 const audio = (() => {
   let muted = ls.get("wg_muted") === true;
@@ -112,7 +114,11 @@ const connectorsList = [
         showQrModal: true,
       })
     : null,
-  CB_APP ? coinbaseWallet({ appName: CB_APP }) : null,
+  CB_APP
+    ? coinbaseWallet({
+        appName: CB_APP,
+      })
+    : null,
 ].filter(Boolean) as any[];
 
 const config = createConfig({
@@ -124,16 +130,23 @@ const config = createConfig({
   },
 });
 
-/** ===== Lives: backend source of truth ===== */
-function useLives(address?: string | null) {
+/** ===== Lives counter sync (optimistic across reloads) ===== */
+const PENDING_LIFE_KEY = "wg_pending_life";
+
+function useOptimisticLives(address?: string | null) {
   const chainId = useChainId();
   const [lives, setLives] = useState<number>(0);
 
   useEffect(() => {
-    if (!address) {
-      setLives(0);
-      return;
+    if (!address) return;
+
+    // Restore optimistic +1 life across reloads after NFT send
+    const p = ls.get(PENDING_LIFE_KEY) as string | null;
+    if (p && p.toLowerCase() === address.toLowerCase()) {
+      setLives((x) => (x > 0 ? x : 1));
     }
+
+    // Poll backend for real lives
     let t: any;
     async function tick() {
       try {
@@ -143,22 +156,16 @@ function useLives(address?: string | null) {
         );
         if (res.ok) {
           const data = (await res.json()) as { lives: number };
-          const n = Number(data?.lives);
-          setLives(Number.isFinite(n) && n > 0 ? n : 0);
-        } else {
-          // On backend error, do not invent lives
-          setLives(0);
+          if (typeof data?.lives === "number") setLives(data.lives);
         }
       } catch {
-        // Network error: keep as 0 to avoid false "game"
-        setLives(0);
+        /* keep last value */
       }
     }
     tick();
     t = setInterval(tick, 3000);
     return () => clearInterval(t);
   }, [chainId, address]);
-
   return lives;
 }
 
@@ -173,52 +180,53 @@ function AppInner() {
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
+  const [forceGame, setForceGame] = useState(false);
 
-  const livesCount = useLives(address);
+  // Lives from backend + optimistic +1 after NFT send
+  const livesCount = useOptimisticLives(address);
+
   const activeAddr = address ?? null;
 
-  // === Modal events from Tamagotchi ===
+  // === Events from Tamagotchi ===
   useEffect(() => {
     const onRequestNft = () => setVaultOpen(true);
-    window.addEventListener("wg:request-nft", onRequestNft as any);
-    return () => window.removeEventListener("wg:request-nft", onRequestNft as any);
-  }, []);
 
-  // === Audio events (correct event name) ===
+    const onConfirmed = async () => {
+      // Mark optimistic +1 life and keep game mounted
+      if (address) ls.set(PENDING_LIFE_KEY, address);
+      setVaultOpen(false);
+      setForceGame(true);
+    };
+
+    window.addEventListener("wg:request-nft", onRequestNft as any);
+    window.addEventListener("wg:nft-confirmed", onConfirmed as any);
+    return () => {
+      window.removeEventListener("wg:request-nft", onRequestNft as any);
+      window.removeEventListener("wg:nft-confirmed", onConfirmed as any);
+    };
+  }, [address]);
+
+  // === Audio ===
   useEffect(() => {
     const onFeed = () => audio.playEatSfx();
     const onCatStart = () => audio.playCatastrophe();
     const onCatEnd = () => audio.playCatEnd();
-    window.addEventListener("wg:feed", onFeed as any);
+    window.addEventListener("wg:fed", onFeed as any);
     window.addEventListener("wg:catastrophe-start", onCatStart as any);
     window.addEventListener("wg:catastrophe-end", onCatEnd as any);
     return () => {
-      window.removeEventListener("wg:feed", onFeed as any);
+      window.removeEventListener("wg:fed", onFeed as any);
       window.removeEventListener("wg:catastrophe-start", onCatStart as any);
       window.removeEventListener("wg:catastrophe-end", onCatEnd as any);
     };
   }, []);
 
-  // === Life consumption callback ===
-  const consumeLife = async () => {
-    try {
-      if (address) {
-        await fetch(`${LIVES_REST}/consume`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ addr: address, chain: chainId }),
-        });
-      }
-    } catch {
-      /* no-op */
-    }
-    // Do not force reset or force game; wait for real lives from backend.
-  };
-
-  // Strict gate: only backend lives > 0 unlocks the game
-  const safeLives = Number.isFinite(livesCount) ? livesCount : 0;
   const gate: "splash" | "locked" | "game" =
-    !isConnected ? "splash" : safeLives > 0 ? "game" : "locked";
+    !isConnected
+      ? "splash"
+      : forceGame || livesCount > 0
+      ? "game"
+      : "locked";
 
   const tamagotchiKey = `wg-${String(chainId ?? MONAD_CHAIN_ID)}-${String(
     activeAddr || "none"
@@ -239,13 +247,13 @@ function AppInner() {
 
         <div className="walletRow">
           <MuteButton />
+
           {isConnected ? (
             <>
               <span className="pill">
                 {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "—"}
               </span>
               <span className="pill">Chain: {chainId ?? "—"}</span>
-              <span className="pill">Lives: {safeLives}</span>
               <button className="btn" onClick={() => setVaultOpen(true)}>
                 Send NFT
               </button>
@@ -276,50 +284,50 @@ function AppInner() {
         </section>
       )}
 
-      {gate === "locked" && (
-        <>
-          {/* Keep game mounted so DeathOverlay can show */}
-          <div style={{ maxWidth: 980, margin: "0 auto" }}>
-            <Tamagotchi
-              key={tamagotchiKey}
-              walletAddress={activeAddr || undefined}
-              lives={0}
-              onLoseLife={consumeLife}
-            />
-          </div>
+    {gate === "locked" && (
+  <>
+    {/* Mount game even when locked so DeathOverlay can show immediately */}
+    <div style={{ maxWidth: 980, margin: "0 auto" }}>
+      <Tamagotchi
+        key={tamagotchiKey}
+        walletAddress={activeAddr || undefined}
+        lives={0}
+      />
+    </div>
 
-          <section className="card splash" style={{ maxWidth: 640, margin: "24px auto" }}>
-            <div className="splash-inner">
-              <div className="splash-title" style={{ marginBottom: 8 }}>
-                No lives on this wallet
-              </div>
-              <div className="muted" style={{ marginBottom: 16, textAlign: "center" }}>
-                Send 1 NFT to the Vault to start. If another wallet already has a life,
-                switch to it and your pet will continue from there.
-              </div>
-              <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-                {!isConnected ? (
-                  <button className="btn btn-primary btn-lg" onClick={() => setPickerOpen(true)}>
-                    Connect Wallet
-                  </button>
-                ) : (
-                  <button className="btn btn-primary btn-lg" onClick={() => setVaultOpen(true)}>
-                    Send NFT (+1 life)
-                  </button>
-                )}
-              </div>
-            </div>
-          </section>
-        </>
-      )}
+    {/* Твоя существующая карточка "No lives..." — остаётся ниже */}
+    <section className="card splash" style={{ maxWidth: 640, margin: "24px auto" }}>
+      <div className="splash-inner">
+        <div className="splash-title" style={{ marginBottom: 8 }}>
+          No lives on this wallet
+        </div>
+        <div className="muted" style={{ marginBottom: 16, textAlign: "center" }}>
+          Send 1 NFT to the Vault to start. If another wallet already has a life,
+          switch to it and your pet will continue from there.
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+          {!isConnected ? (
+            <button className="btn btn-primary btn-lg" onClick={() => setPickerOpen(true)}>
+              Connect Wallet
+            </button>
+          ) : (
+            <button className="btn btn-primary btn-lg" onClick={() => setVaultOpen(true)}>
+              Send NFT (+1 life)
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
+  </>
+)}
+
 
       {gate === "game" && (
         <div style={{ maxWidth: 980, margin: "0 auto" }}>
           <Tamagotchi
             key={tamagotchiKey}
             walletAddress={activeAddr || undefined}
-            lives={safeLives}
-            onLoseLife={consumeLife}
+            lives={livesCount}
           />
         </div>
       )}
