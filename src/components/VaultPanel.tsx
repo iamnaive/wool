@@ -7,18 +7,24 @@ import { useAccount, useConfig, useSwitchChain } from "wagmi";
 import { writeContract, readContract, getPublicClient } from "@wagmi/core";
 
 /**
- * VaultPanel (robust, ERC-721 only, optimistic confirm + clear errors)
- * - Validates env and ownership.
- * - Switches to target chain if needed.
- * - Tries 3-arg safeTransferFrom, falls back to 4-arg version with empty data.
- * - Fires "wg:nft-confirmed" on tx hash (optimistic) and again on receipt success.
- * - Shows inline error/status to the user.
- * - Comments in English only.
+ * VaultPanel (handles wagmi return shapes)
+ * - Supports writeContract returning either `{ hash }` or `string`.
+ * - Validates env, chain, and ownership.
+ * - Tries 3-arg safeTransferFrom, falls back to 4-arg with empty data.
+ * - Fires "wg:nft-confirmed" optimistically on send, and again on receipt.
+ * - Comments: English only.
  */
 
 const MONAD_CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID ?? 10143);
-const VAULT: Address = (import.meta.env.VAULT_ADDRESS ?? import.meta.env.VITE_VAULT_ADDRESS) as Address ?? zeroAddress;
-const ALLOWED_CONTRACT: Address = "0x88c78d5852f45935324c6d100052958f694e8446";
+const VAULT: Address =
+  ((import.meta.env.VAULT_ADDRESS as Address) ||
+    (import.meta.env.VITE_VAULT_ADDRESS as Address) ||
+    zeroAddress) as Address;
+
+// Prefer env; fallback to your hardcoded collection for safety
+const ALLOWED_CONTRACT: Address =
+  ((import.meta.env.VITE_COLLECTION_ADDRESS as Address) ??
+    "0x88c78d5852f45935324c6d100052958f694e8446") as Address;
 
 const ERC721_ABI_READ = [
   {
@@ -59,6 +65,17 @@ const ERC721_SAFE_4 = [
   },
 ] as const;
 
+// Normalize wagmi writeContract return value across versions
+function normalizeTxHash(res: unknown): `0x${string}` | null {
+  if (!res) return null;
+  if (typeof res === "string") return res as `0x${string}`;
+  if (typeof res === "object" && "hash" in (res as any)) {
+    const h = (res as any).hash;
+    if (typeof h === "string") return h as `0x${string}`;
+  }
+  return null;
+}
+
 export default function VaultPanel() {
   const { address, isConnected, chainId } = useAccount();
   const cfg = useConfig();
@@ -81,7 +98,7 @@ export default function VaultPanel() {
     try {
       await switchChain({ chainId: MONAD_CHAIN_ID });
       return true;
-    } catch (e) {
+    } catch {
       setErr("Please switch to the Monad testnet.");
       return false;
     }
@@ -89,20 +106,19 @@ export default function VaultPanel() {
 
   async function checkOwnership(tokenId: bigint): Promise<boolean> {
     try {
-      const owner = await readContract(cfg, {
+      const owner = (await readContract(cfg, {
         abi: ERC721_ABI_READ,
         address: ALLOWED_CONTRACT,
         functionName: "ownerOf",
         args: [tokenId],
         chainId: MONAD_CHAIN_ID,
-      }) as Address;
+      })) as Address;
       if (!address || owner.toLowerCase() !== address.toLowerCase()) {
         setErr("You are not the owner of this tokenId.");
         return false;
       }
       return true;
     } catch {
-      // Some contracts may revert on nonexistent token; surface a clean message
       setErr("Cannot verify ownership (invalid tokenId or RPC error).");
       return false;
     }
@@ -117,11 +133,9 @@ export default function VaultPanel() {
       return;
     }
     if (!VAULT || VAULT === zeroAddress) {
-      setErr("VAULT address is not configured. Set VITE_VAULT_ADDRESS in env.");
+      setErr("VAULT address is not configured. Set VITE_VAULT_ADDRESS.");
       return;
     }
-
-    // Basic tokenId validation
     const idNum = Number(idStr);
     if (!Number.isFinite(idNum) || idNum < 0) {
       setErr("Enter a valid tokenId (0 or greater).");
@@ -129,11 +143,9 @@ export default function VaultPanel() {
     }
     const tokenId = BigInt(idNum);
 
-    // Switch chain if needed
     const okChain = await ensureChain();
     if (!okChain) return;
 
-    // Ownership precheck
     const okOwner = await checkOwnership(tokenId);
     if (!okOwner) return;
 
@@ -141,10 +153,10 @@ export default function VaultPanel() {
     setInfo("Sending NFT... confirm in your wallet");
 
     try {
-      // First try the 3-arg version
-      let hash: `0x${string}` | null = null;
+      // Try 3-arg first
+      let res: unknown;
       try {
-        const res = await writeContract(cfg, {
+        res = await writeContract(cfg, {
           abi: ERC721_SAFE_3,
           address: ALLOWED_CONTRACT,
           functionName: "safeTransferFrom",
@@ -152,10 +164,9 @@ export default function VaultPanel() {
           account: address as Address,
           chainId: MONAD_CHAIN_ID,
         });
-        hash = res.hash;
-      } catch (e: any) {
-        // If the selector doesn't exist or reverted due to signature, try 4-arg
-        const res = await writeContract(cfg, {
+      } catch {
+        // Fallback to 4-arg with empty data
+        res = await writeContract(cfg, {
           abi: ERC721_SAFE_4,
           address: ALLOWED_CONTRACT,
           functionName: "safeTransferFrom",
@@ -163,32 +174,38 @@ export default function VaultPanel() {
           account: address as Address,
           chainId: MONAD_CHAIN_ID,
         });
-        hash = res.hash;
       }
 
-      if (!hash) throw new Error("No tx hash");
+      const hash = normalizeTxHash(res);
 
-      // Optimistic: notify game immediately (overlay can reset visuals)
+      // Optimistic: always notify the game on send (even if hash shape unknown)
       fireConfirmed(address as Address);
-      setInfo("Transaction sent. Waiting for confirmation...");
 
-      // Repeat on confirmation (harmless duplicate)
-      try {
-        const rcpt = await pc.waitForTransactionReceipt({ hash, confirmations: 0, timeout: 60_000 });
-        if (rcpt?.status === "success") {
-          fireConfirmed(address as Address);
-          setInfo("Confirmed ✓");
-        } else {
-          setErr("Transaction failed.");
+      if (!hash) {
+        // Do not fail hard; just inform and rely on backend poll for lives
+        setInfo("Transaction sent. Waiting for backend to detect the life…");
+      } else {
+        setInfo("Transaction sent. Waiting for confirmation…");
+        try {
+          const rcpt = await pc.waitForTransactionReceipt({
+            hash,
+            confirmations: 0,
+            timeout: 60_000,
+          });
+          if (rcpt?.status === "success") {
+            fireConfirmed(address as Address);
+            setInfo("Confirmed ✓");
+          } else {
+            setErr("Transaction failed.");
+          }
+        } catch {
+          // Timeout/RPC hiccup — backend poll should still pick it up
+          setInfo("Tx broadcasted. It may take a moment to appear.");
         }
-      } catch {
-        // Timeout or RPC error — backend poll should still pick up life later
-        setInfo("Tx broadcasted. It may take a moment to appear.");
       }
 
       setIdStr("");
     } catch (e: any) {
-      // Surface a friendly message
       const msg = (e?.shortMessage || e?.message || "Failed to send NFT").toString();
       setErr(msg);
     } finally {
@@ -220,14 +237,12 @@ export default function VaultPanel() {
         </button>
       </div>
 
-      {/* Inline status / error */}
       {info && <div className="text-xs text-white/80">{info}</div>}
       {err && <div className="text-xs text-red-400">{err}</div>}
 
-      {/* Quick env hint if VAULT is missing */}
       {VAULT === zeroAddress && (
         <div className="text-xs text-yellow-400">
-          Tip: set <code>VITE_VAULT_ADDRESS</code> in your env (now it is zero).
+          Tip: set <code>VITE_VAULT_ADDRESS</code> in your env (now zero).
         </div>
       )}
     </div>
