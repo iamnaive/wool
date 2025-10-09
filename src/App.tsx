@@ -81,15 +81,15 @@ function AppInner() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
 
- useEffect(() => {
-   if (isConnected) setConnectOpen(false);
- }, [isConnected]);
+  const [isConnectOpen, setIsConnectOpen] = useState(false);
+  const [isVaultOpen, setIsVaultOpen] = useState(false);
+  const [forceGame, setForceGame] = useState(false);
 
   const livesCount = useOptimisticLives(address);
   const activeAddr = address ?? null;
 
   useEffect(() => {
-    const onRequestNft = () => setVaultOpen(true);
+    const onRequestNft = () => setIsVaultOpen(true);
     const onConfirmed = () => {
       if (activeAddr) {
         ls.set(PENDING_LIFE_KEY, activeAddr);
@@ -99,7 +99,7 @@ function AppInner() {
         map[key] = (map[key] ?? 0) + 1;
         localStorage.setItem("wg_lives_v1", JSON.stringify(map));
       }
-      setVaultOpen(false);
+      setIsVaultOpen(false);
       setForceGame(true);
     };
     window.addEventListener("wg:request-nft", onRequestNft as any);
@@ -117,50 +117,57 @@ function AppInner() {
 
   return (
     <div className="wrap">
-      <TopBar onOpenVault={() => setVaultOpen(true)} onOpenConnect={() => setConnectOpen(true)} />
+      <TopBar onOpenVault={() => setIsVaultOpen(true)} onOpenConnect={() => setIsConnectOpen(true)} />
 
       {gate === "splash" && (
         <section className="card splash">
           <div className="splash-inner">
             <div className="splash-title">Wooligotchi</div>
             <div className="muted">Send 1 NFT → get 1 life (to the Vault)</div>
-            <button className="btn btn-primary btn-lg" onClick={() => setConnectOpen(true)}>Connect Wallet</button>
+            <button className="btn btn-primary btn-lg" onClick={() => setIsConnectOpen(true)}>Connect Wallet</button>
           </div>
         </section>
       )}
 
       {gate === "locked" && (
-  <section className="card splash" style={{ maxWidth: 640, margin: "24px auto" }}>
-    <div className="splash-inner">
-      <div className="splash-title" style={{ marginBottom: 8 }}>No lives on this wallet</div>
-      <div className="muted" style={{ marginBottom: 16, textAlign: "center" }}>
-        Send 1 NFT to the Vault to start. If another wallet has a life, switch to it.
-      </div>
-      <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-        {!isConnected ? (
-          <button className="btn btn-primary btn-lg" onClick={() => setConnectOpen(true)}>
-            Connect Wallet
-          </button>
-        ) : (
-          <button className="btn btn-primary btn-lg" onClick={() => setVaultOpen(true)}>
-            Send NFT (+1 life)
-          </button>
-        )}
-      </div>
-    </div>
-  </section>
-)}
-
+        <section className="card splash" style={{ maxWidth: 640, margin: "24px auto" }}>
+          <div className="splash-inner">
+            <div className="splash-title" style={{ marginBottom: 8 }}>No lives on this wallet</div>
+            <div className="muted" style={{ marginBottom: 16, textAlign: "center" }}>
+              Send 1 NFT to the Vault to start. If another wallet has a life, switch to it.
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+              {!isConnected ? (
+                <button className="btn btn-primary btn-lg" onClick={() => setIsConnectOpen(true)}>
+                  Connect Wallet
+                </button>
+              ) : (
+                <button className="btn btn-primary btn-lg" onClick={() => setIsVaultOpen(true)}>
+                  Send NFT (+1 life)
+                </button>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {gate === "game" && (
         <div style={{ maxWidth: 980, margin: "0 auto" }}>
-          <Tamagotchi key={tamaKey} walletAddress={activeAddr || undefined} currentForm={"egg" as any} lives={livesCount} />
+          <Tamagotchi
+            key={tamaKey}
+            walletAddress={activeAddr || undefined}
+            currentForm={"egg" as any}
+            lives={livesCount}
+          />
         </div>
       )}
 
-      {connectOpen && <ConnectModal onClose={() => setConnectOpen(false)} />}
-      {vaultOpen && (
-        <div onClick={() => setVaultOpen(false)} className="modal">
+      {isConnectOpen && (
+        <ConnectModal onClose={() => setIsConnectOpen(false)} />
+      )}
+
+      {isVaultOpen && (
+        <div onClick={() => setIsVaultOpen(false)} className="modal">
           <div onClick={(e) => e.stopPropagation()} className="card" style={{ width: 520, maxWidth: "92vw" }}>
             <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>Send 1 NFT → +1 life</div>
             <VaultPanel />
@@ -173,7 +180,7 @@ function AppInner() {
   );
 }
 
-/* ---------- connect modal ---------- */
+/* ---------- connect modal (auto-close on success via connectAsync) ---------- */
 function ConnectModal({ onClose }: { onClose: () => void }) {
   return (
     <div onClick={onClose} className="modal">
@@ -186,49 +193,49 @@ function ConnectModal({ onClose }: { onClose: () => void }) {
 }
 
 function WalletButtons({ onDone }: { onDone?: () => void }) {
-  // use connectAsync so we can await and close modal reliably
   const { connectAsync, connectors } = useConnect();
 
-  const list = React.useMemo(() => {
-    const mapLabel = (c: any): { label: string; ready: boolean } => {
-      const opts: any = c.options ?? {};
+  const list = useMemo(() => {
+    const getHasMM = () =>
+      !!(window as any).ethereum?.isMetaMask ||
+      (Array.isArray((window as any).ethereum?.providers) &&
+        (window as any).ethereum.providers.some((p: any) => p?.isMetaMask));
+    const items = connectors.map((c) => {
+      const opts: any = (c as any).options ?? {};
+      let label = c.name;
+      let ready = true;
+
       if (c.type === "injected" && opts?.target === "metaMask") {
-        const ready =
-          !!(window as any).ethereum?.isMetaMask ||
-          (Array.isArray((window as any).ethereum?.providers) &&
-            (window as any).ethereum.providers.some((p: any) => p?.isMetaMask));
-        return { label: "MetaMask", ready };
-      }
-      if (c.type === "injected" && typeof opts?.getProvider === "function") {
+        label = "MetaMask"; ready = getHasMM();
+      } else if (c.type === "injected" && typeof opts?.getProvider === "function") {
         const p = opts.getProvider();
         const isPhantom  = !!(p && (p as any).isPhantom);
         const isBackpack = !!(p && (p as any).isBackpack);
         const isKeplr    = !!(p && ((p as any).isKeplr || (p as any).isKeplrEvm));
-        if (isPhantom)  return { label: "Phantom",  ready: true };
-        if (isBackpack) return { label: "Backpack", ready: true };
-        if (isKeplr)    return { label: "Keplr",    ready: true };
-        return { label: "Injected", ready: !!p };
+        if (isPhantom)  { label = "Phantom";  ready = true; }
+        else if (isBackpack) { label = "Backpack"; ready = true; }
+        else if (isKeplr)    { label = "Keplr";    ready = true; }
+        else { label = "Injected"; ready = !!p; }
+      } else if (/walletconnect/i.test(c.name)) {
+        label = "WalletConnect";
+      } else if (/coinbase/i.test(c.name)) {
+        label = "Coinbase Wallet";
       }
-      if (/walletconnect/i.test(c.name)) return { label: "WalletConnect", ready: true };
-      if (/coinbase/i.test(c.name))     return { label: "Coinbase Wallet", ready: true };
-      return { label: c.name, ready: true };
-    };
 
-    const items = connectors.map((c) => {
-      const { label, ready } = mapLabel(c as any);
-      const isInjected = (c.type as string) === "injected";
+      const prio =
+        label === "MetaMask" ? 1 :
+        label === "Phantom" ? 2 :
+        label === "Backpack" ? 3 :
+        label === "Keplr" ? 4 :
+        label === "WalletConnect" ? 5 :
+        label === "Coinbase Wallet" ? 6 : 99;
+
       return {
         key: (c as any).id ?? (c as any).uid ?? label,
         label,
         connector: c,
-        disabled: isInjected && !ready,
-        prio:
-          label === "MetaMask" ? 1 :
-          label === "Phantom" ? 2 :
-          label === "Backpack" ? 3 :
-          label === "Keplr" ? 4 :
-          label === "WalletConnect" ? 5 :
-          label === "Coinbase Wallet" ? 6 : 99,
+        disabled: c.type === "injected" && !ready,
+        prio,
       };
     });
 
@@ -255,9 +262,9 @@ function WalletButtons({ onDone }: { onDone?: () => void }) {
           onClick={async () => {
             try {
               await connectAsync({ connector });
-              onDone?.(); // close modal immediately on success
+              onDone?.(); // close modal on success
             } catch {
-              // keep modal open so user can try another connector
+              // keep modal open so user can try a different connector
             }
           }}
         >
