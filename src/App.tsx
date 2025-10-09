@@ -113,8 +113,6 @@ function AppInner() {
       map[key] = next;
       localStorage.setItem(LIVES_KEY, JSON.stringify(map));
     } catch {}
-    // force re-read by toggling a tiny flag in localStorage (optional),
-    // но у нас useOptimisticLives перечитывает по address, так что достаточно следующего эффекта:
     setForceGame(false);
   };
 
@@ -196,7 +194,7 @@ function AppInner() {
             walletAddress={activeAddr || undefined}
             currentForm={"egg" as any}
             lives={livesCount}
-            onLoseLife={handleLoseLife}   {/* ← pass down so life gets decremented exactly once */}
+            onLoseLife={handleLoseLife}
           />
         </div>
       )}
