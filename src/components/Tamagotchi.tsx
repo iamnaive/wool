@@ -745,7 +745,7 @@ export default function Tamagotchi({
       const sleepingNow = isSleepingAt(nowAbs);
 
       // ВАЖНО: "мертв" только если нет жизни
-      const deadUi = (lives || 0) <= 0 || (deadRef.current || forceDeadPreviewRef.current);
+      const deadUi = (lives || 0) <= 0 && (deadRef.current || forceDeadPreviewRef.current);
 
       const avatarAnimKey: AnimKey = (() => {
         if (deadUi) return "idle";
