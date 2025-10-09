@@ -169,35 +169,29 @@ function AppInner() {
     }
   }, [livesFromBackend, address]);
 
-  // --- CRITICAL FIX 1: reset flags on wallet/chain change ---
+  // reset flags on wallet/chain change + honor pending life
   useEffect(() => {
-    // When switching wallet or chain, clear optimistic state & close vault
     setForceGame(false);
     setLivesCount(0);
     setVaultOpen(false);
-
-    // NEW: if this wallet has a fresh pending-life (after reload/switch), keep the game open
     if (hasPendingLife(address)) {
       setForceGame(true);
       setLivesCount((prev) => (prev > 0 ? prev : 1));
     }
-  }, [address, chainId]); // ---------------------------------------------------
+  }, [address, chainId]);
 
   // Bridge events
   useEffect(() => {
     const onRequestNft = () => setVaultOpen(true);
-
-    // Address-scoped confirm + persist optimistic life (so reload keeps the gate)
     const onConfirmed = (e: Event) => {
       const ce = e as CustomEvent;
       const evAddr = String((ce?.detail as any)?.address || "").toLowerCase();
       const cur = String(address || "").toLowerCase();
-      if (!evAddr || !cur || evAddr !== cur) return; // ignore foreign confirmations
+      if (!evAddr || !cur || evAddr !== cur) return;
       setVaultOpen(false);
       setForceGame(true);
       setLivesCount((prev) => (prev > 0 ? prev : 1));
-      // NEW: persist pending life with TTL
-      setPendingLife(address);
+      setPendingLife(address); // persist across reloads
     };
 
     window.addEventListener("wg:request-nft", onRequestNft as any);
@@ -208,7 +202,7 @@ function AppInner() {
     };
   }, [address]);
 
-  // === Audio event bridge (unchanged) ===
+  // === Audio ===
   useEffect(() => {
     const onFeed = () => audio.playEatSfx();
     const onCatastrophe = (e: Event) => {
@@ -232,10 +226,6 @@ function AppInner() {
     };
   }, []);
 
-  // Gate:
-  // - "splash": not connected and never connected before
-  // - "locked": connected, but no lives and no optimistic confirm
-  // - "game":   has lives OR optimistic confirm
   const gate: "splash" | "locked" | "game" =
     !isConnected && !keepGameMounted
       ? "splash"
@@ -243,7 +233,6 @@ function AppInner() {
       ? "game"
       : "locked";
 
-  // Stable key per (chainId + wallet) to remount on wallet switch only
   const tamagotchiKey = `wg-${String(chainId ?? MONAD_CHAIN_ID)}-${String(
     (activeAddr || "anon").toLowerCase()
   )}`;
@@ -302,7 +291,6 @@ function AppInner() {
         </div>
       </header>
 
-      {/* Splash (first time) */}
       {gate === "splash" && (
         <section className="card splash">
           <div className="splash-inner">
@@ -318,7 +306,6 @@ function AppInner() {
         </section>
       )}
 
-      {/* Locked (NO LIVES) — DO NOT MOUNT GAME */}
       {gate === "locked" && (
         <section className="card splash" style={{ maxWidth: 640, margin: "24px auto" }}>
           <div className="splash-inner">
@@ -344,7 +331,6 @@ function AppInner() {
         </section>
       )}
 
-      {/* Game */}
       {gate === "game" && (
         <div style={{ maxWidth: 980, margin: "0 auto" }}>
           <Tamagotchi
@@ -355,7 +341,6 @@ function AppInner() {
         </div>
       )}
 
-      {/* Wallet picker */}
       {pickerOpen && (
         <div onClick={() => setPickerOpen(false)} className="modal">
           <div
@@ -363,10 +348,7 @@ function AppInner() {
             className="card"
             style={{ width: 460, maxWidth: "92vw" }}
           >
-            <div
-              className="title"
-              style={{ fontSize: 20, marginBottom: 10, color: "white" }}
-            >
+            <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>
               Connect a wallet
             </div>
             <div className="wallet-grid">
@@ -382,18 +364,13 @@ function AppInner() {
                 </button>
               ))}
             </div>
-            <div
-              style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}
-            >
-              <button onClick={() => setPickerOpen(false)} className="btn">
-                Close
-              </button>
+            <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
+              <button onClick={() => setPickerOpen(false)} className="btn">Close</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Vault modal (Send NFT) */}
       {vaultOpen && (
         <div onClick={() => setVaultOpen(false)} className="modal">
           <div
