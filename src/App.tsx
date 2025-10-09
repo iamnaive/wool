@@ -16,10 +16,10 @@ import { injected, walletConnect, coinbaseWallet } from "wagmi/connectors";
 import { defineChain } from "viem";
 
 // IMPORTANT: imports point to files in the same folder as App.tsx
-import Tamagotchi from "./Tamagotchi";
-import VaultPanel from "./VaultPanel";
-import MuteButton from "./MuteButton";        // if your MuteButton is a named export, change to:  import { MuteButton } from "./MuteButton";
-import AudioProvider from "./AudioProvider";  // keep as default
+import Tamagotchi from "./components/Tamagotchi";
+import VaultPanel from "./components/VaultPanel";
+import MuteButton from "./audio/MuteButton";        // if your MuteButton is a named export, change to:  import { MuteButton } from "./MuteButton";
+import AudioProvider from "./audio/AudioProvider";  // keep as default
 import "./styles.css";
 
 /* ---------- ENV & Network ---------- */
