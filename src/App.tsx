@@ -130,27 +130,27 @@ function AppInner() {
       )}
 
       {gate === "locked" && (
-        <>
-          <div style={{ maxWidth: 980, margin: "0 auto" }}>
-            <Tamagotchi key={tamaKey} walletAddress={activeAddr || undefined} currentForm={"egg" as any} lives={0} />
-          </div>
-          <section className="card splash" style={{ maxWidth: 640, margin: "24px auto" }}>
-            <div className="splash-inner">
-              <div className="splash-title" style={{ marginBottom: 8 }}>No lives on this wallet</div>
-              <div className="muted" style={{ marginBottom: 16, textAlign: "center" }}>
-                Send 1 NFT to the Vault to start. If another wallet has a life, switch to it.
-              </div>
-              <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-                {!isConnected ? (
-                  <button className="btn btn-primary btn-lg" onClick={() => setConnectOpen(true)}>Connect Wallet</button>
-                ) : (
-                  <button className="btn btn-primary btn-lg" onClick={() => setVaultOpen(true)}>Send NFT (+1 life)</button>
-                )}
-              </div>
-            </div>
-          </section>
-        </>
-      )}
+  <section className="card splash" style={{ maxWidth: 640, margin: "24px auto" }}>
+    <div className="splash-inner">
+      <div className="splash-title" style={{ marginBottom: 8 }}>No lives on this wallet</div>
+      <div className="muted" style={{ marginBottom: 16, textAlign: "center" }}>
+        Send 1 NFT to the Vault to start. If another wallet has a life, switch to it.
+      </div>
+      <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+        {!isConnected ? (
+          <button className="btn btn-primary btn-lg" onClick={() => setConnectOpen(true)}>
+            Connect Wallet
+          </button>
+        ) : (
+          <button className="btn btn-primary btn-lg" onClick={() => setVaultOpen(true)}>
+            Send NFT (+1 life)
+          </button>
+        )}
+      </div>
+    </div>
+  </section>
+)}
+
 
       {gate === "game" && (
         <div style={{ maxWidth: 980, margin: "0 auto" }}>
@@ -188,48 +188,68 @@ function ConnectModal({ onClose }: { onClose: () => void }) {
 function WalletButtons() {
   const { connect, connectors } = useConnect();
 
-  // Map wagmi connectors to explicit labels + readiness checks
-  const list = useMemo(() => {
-    const hasMetaMask =
-      !!(globalThis as any).ethereum?.isMetaMask ||
-      Array.isArray((globalThis as any).ethereum?.providers) &&
-      (globalThis as any).ethereum.providers.some((p: any) => p?.isMetaMask);
-
-    const hasPhantom = !!(globalThis as any).phantom?.ethereum;
-
-    return connectors.map((c) => {
+  // Normalize to a clean, unique list: MetaMask, Phantom, WalletConnect, Coinbase Wallet
+  const list = React.useMemo(() => {
+    // Map wagmi connectors -> normalized label + readiness
+    const mapped = connectors.map((c) => {
       const opts: any = (c as any).options ?? {};
-      let label = c.name;
+      const isInjected = c.type === "injected";
 
-      if (c.type === "injected") {
-        if (opts?.target === "metaMask") label = "MetaMask";
-        else if (typeof opts?.getProvider === "function") label = "Phantom";
-        else label = hasMetaMask ? "MetaMask" : "Injected";
-      } else if (/walletconnect/i.test(c.name)) {
-        label = "WalletConnect";
-      } else if (/coinbase/i.test(c.name)) {
-        label = "Coinbase Wallet";
+      // Explicit labels
+      let label = c.name;
+      if (isInjected && opts?.target === "metaMask") label = "MetaMask";
+      else if (isInjected && typeof opts?.getProvider === "function") label = "Phantom";
+      else if (/walletconnect/i.test(c.name)) label = "WalletConnect";
+      else if (/coinbase/i.test(c.name)) label = "Coinbase Wallet";
+      else if (isInjected) {
+        // Fallback: choose a sane label for any generic injected
+        const hasMM =
+          !!(window as any).ethereum?.isMetaMask ||
+          (Array.isArray((window as any).ethereum?.providers) &&
+            (window as any).ethereum.providers.some((p: any) => p?.isMetaMask));
+        label = hasMM ? "MetaMask" : "Injected";
       }
 
-      // our own readiness for injected ones
+      // Readiness for injected only (WalletConnect/Coinbase are always clickable)
       const ready =
-        label === "MetaMask" ? hasMetaMask :
-        label === "Phantom" ? hasPhantom :
-        true;
+        label === "MetaMask"
+          ? !!(
+              (window as any).ethereum?.isMetaMask ||
+              (Array.isArray((window as any).ethereum?.providers) &&
+                (window as any).ethereum.providers.some((p: any) => p?.isMetaMask))
+            )
+          : label === "Phantom"
+          ? !!(window as any).phantom?.ethereum
+          : true;
 
-      return { c, key: (c as any).id ?? (c as any).uid ?? label, label, disabled: c.type === "injected" && !ready };
+      return {
+        key: (c as any).id ?? (c as any).uid ?? label,
+        label,
+        connector: c,
+        disabled: isInjected && !ready,
+      };
+    });
+
+    // Keep only the first by label (dedupe)
+    const allow = new Set(["MetaMask", "Phantom", "WalletConnect", "Coinbase Wallet"]);
+    const seen = new Set<string>();
+    return mapped.filter((it) => {
+      if (!allow.has(it.label)) return false;
+      if (seen.has(it.label)) return false;
+      seen.add(it.label);
+      return true;
     });
   }, [connectors]);
 
   return (
     <div className="wallet-grid">
-      {list.map(({ c, key, label, disabled }) => (
+      {list.map(({ key, label, connector, disabled }) => (
         <button
           key={key}
           className="btn"
           disabled={disabled}
           title={disabled ? `${label} not installed` : `Connect with ${label}`}
-          onClick={() => connect({ connector: c })}
+          onClick={() => connect({ connector })}
         >
           {label}
         </button>
@@ -237,6 +257,7 @@ function WalletButtons() {
     </div>
   );
 }
+
 
 /* ---------- export ---------- */
 export default function App() {
