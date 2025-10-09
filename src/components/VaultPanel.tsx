@@ -3,7 +3,6 @@
 import React, { useState } from "react";
 import type { Address } from "viem";
 import { useAccount, useSwitchChain } from "wagmi";
-import { getConfig } from "wagmi";
 import { writeContract, getPublicClient } from "wagmi/actions";
 
 /**
@@ -50,11 +49,12 @@ const ERC721_WRITE_ABI = [
 export default function VaultPanel({ onClose }: Props) {
   const { address, isConnected, chainId } = useAccount();
   const { switchChain } = useSwitchChain();
-  const cfg = getConfig();
-  const pc = getPublicClient(cfg);
+
+  const pc = getPublicClient(); // reads from WagmiProvider config
 
   const [idStr, setIdStr] = useState("");
   const [busy, setBusy] = useState(false);
+
   const disabled = !isConnected || VAULT === ZERO || busy;
 
   // Fire the in-game event
@@ -69,7 +69,7 @@ export default function VaultPanel({ onClose }: Props) {
     const me = address as Address | undefined;
     if (!me) return;
     const idNum = Number(idStr);
-    if (!Number.isFinite(idNum) || idNum < 0 || idNum > 1000000000) return;
+    if (!Number.isFinite(idNum) || idNum < 0 || idNum > 1_000_000_000) return;
 
     try {
       // Ensure correct chain
@@ -83,7 +83,7 @@ export default function VaultPanel({ onClose }: Props) {
 
       setBusy(true);
 
-      const { hash } = await writeContract(cfg, {
+      const { hash } = await writeContract({
         abi: ERC721_WRITE_ABI,
         address: ALLOWED_CONTRACT,
         functionName: "safeTransferFrom",
@@ -115,12 +115,10 @@ export default function VaultPanel({ onClose }: Props) {
       <input
         inputMode="numeric"
         pattern="[0-9]*"
-        placeholder="NFT id (0..1000000000)"
+        placeholder="NFT id (0..1e9)"
         value={idStr}
         onChange={(e) => setIdStr(e.target.value.replace(/[^0-9]/g, ""))}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !disabled && idStr.length > 0) send();
-        }}
+        onKeyDown={(e) => { if (e.key === "Enter" && !disabled && idStr.length > 0) send(); }}
         className="px-3 py-2 rounded-xl bg-black/30 border border-white/10 w-full"
       />
       <button
