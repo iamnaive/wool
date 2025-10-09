@@ -235,12 +235,16 @@ function AppInner() {
 /* Standalone buttons list so it can be reused */
 function WalletButtons() {
   const { connect, connectors } = useConnect();
+
   return (
     <div className="wallet-grid">
       {connectors.map((c) => {
         const key = (c as any).id ?? (c as any).uid ?? c.name;
-        const disabled = !c.ready;
-        const title = !c.ready ? "Not installed" : `Connect with ${c.name}`;
+        const isInjected = (c.type as string) === "injected";
+        // For injected we can gray out when not installed; for WC/Coinbase let it be clickable.
+        const disabled = isInjected && !c.ready;
+        const title = !disabled ? `Connect with ${c.name}` : "Not installed";
+
         return (
           <button
             key={key}
@@ -256,6 +260,7 @@ function WalletButtons() {
     </div>
   );
 }
+
 
 /* Export with audio provider (wagmi/query providers live in main.tsx) */
 export default function App() {
