@@ -44,13 +44,20 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** ===== Audio (simple bus) ===== */
 const audio = (() => {
   let muted = ls.get("wg_muted") === true;
+
+  // Safer play: reset to 0 and handle promise rejections
   const play = async (id: string) => {
     if (muted) return;
     const el = document.getElementById(id) as HTMLAudioElement | null;
+    if (!el) return;
     try {
-      await el?.play();
-    } catch {}
+      el.currentTime = 0;
+      await el.play();
+    } catch {
+      /* ignore autoplay policy errors; unlock effect below will help */
+    }
   };
+
   return {
     isMuted: () => muted,
     setMuted: (m: boolean) => {
@@ -206,7 +213,43 @@ function AppInner() {
     };
   }, [address]);
 
-  // === Audio ===
+  // === Audio unlock on first user gesture ===
+  useEffect(() => {
+    // Unlock HTMLAudio elements on the first user gesture to satisfy autoplay policies
+    const eatEl = document.getElementById("sfx_eat") as HTMLAudioElement | null;
+    const catEl = document.getElementById("sfx_catastrophe") as HTMLAudioElement | null;
+    const endEl = document.getElementById("sfx_cat_end") as HTMLAudioElement | null;
+
+    const tryUnlock = async () => {
+      const els = [eatEl, catEl, endEl].filter(Boolean) as HTMLAudioElement[];
+      for (const el of els) {
+        try {
+          el.muted = true;
+          await el.play();
+          el.pause();
+          el.currentTime = 0;
+          el.muted = false;
+        } catch {
+          // Ignore; we'll try again on the next gesture
+        }
+      }
+      // Remove listeners after a single attempt; if it failed, next gesture will add again on remount
+      window.removeEventListener("pointerdown", tryUnlock);
+      window.removeEventListener("keydown", tryUnlock);
+      window.removeEventListener("touchstart", tryUnlock);
+    };
+
+    window.addEventListener("pointerdown", tryUnlock);
+    window.addEventListener("keydown", tryUnlock);
+    window.addEventListener("touchstart", tryUnlock);
+    return () => {
+      window.removeEventListener("pointerdown", tryUnlock);
+      window.removeEventListener("keydown", tryUnlock);
+      window.removeEventListener("touchstart", tryUnlock);
+    };
+  }, []);
+
+  // === Audio events ===
   useEffect(() => {
     const onFeed = () => audio.playEatSfx();
     const onCatStart = () => audio.playCatastrophe();
@@ -234,10 +277,10 @@ function AppInner() {
 
   return (
     <div className="wrap">
-      {/* Hidden audio tags */}
-      <audio id="sfx_eat" src="/audio/eat.mp3" preload="auto" />
-      <audio id="sfx_catastrophe" src="/audio/catastrophe.mp3" preload="auto" />
-      <audio id="sfx_cat_end" src="/audio/cat_end.mp3" preload="auto" />
+      {/* Hidden audio tags (paths point to real files in /public/audio) */}
+      <audio id="sfx_eat" src="/audio/sfx_eat.mp3" preload="auto" />
+      <audio id="sfx_catastrophe" src="/audio/bgm_disaster.mp3" preload="auto" />
+      <audio id="sfx_cat_end" src="/audio/bgm_main.mp3" preload="auto" />
 
       <header className="topbar">
         <div className="brand">
@@ -284,43 +327,42 @@ function AppInner() {
         </section>
       )}
 
-    {gate === "locked" && (
-  <>
-    {/* Mount game even when locked so DeathOverlay can show immediately */}
-    <div style={{ maxWidth: 980, margin: "0 auto" }}>
-      <Tamagotchi
-        key={tamagotchiKey}
-        walletAddress={activeAddr || undefined}
-        lives={0}
-      />
-    </div>
+      {gate === "locked" && (
+        <>
+          {/* Mount game even when locked so DeathOverlay can show immediately */}
+          <div style={{ maxWidth: 980, margin: "0 auto" }}>
+            <Tamagotchi
+              key={tamagotchiKey}
+              walletAddress={activeAddr || undefined}
+              lives={0}
+            />
+          </div>
 
-    {/* Твоя существующая карточка "No lives..." — остаётся ниже */}
-    <section className="card splash" style={{ maxWidth: 640, margin: "24px auto" }}>
-      <div className="splash-inner">
-        <div className="splash-title" style={{ marginBottom: 8 }}>
-          No lives on this wallet
-        </div>
-        <div className="muted" style={{ marginBottom: 16, textAlign: "center" }}>
-          Send 1 NFT to the Vault to start. If another wallet already has a life,
-          switch to it and your pet will continue from there.
-        </div>
-        <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-          {!isConnected ? (
-            <button className="btn btn-primary btn-lg" onClick={() => setPickerOpen(true)}>
-              Connect Wallet
-            </button>
-          ) : (
-            <button className="btn btn-primary btn-lg" onClick={() => setVaultOpen(true)}>
-              Send NFT (+1 life)
-            </button>
-          )}
-        </div>
-      </div>
-    </section>
-  </>
-)}
-
+          {/* Existing "No lives..." card stays */}
+          <section className="card splash" style={{ maxWidth: 640, margin: "24px auto" }}>
+            <div className="splash-inner">
+              <div className="splash-title" style={{ marginBottom: 8 }}>
+                No lives on this wallet
+              </div>
+              <div className="muted" style={{ marginBottom: 16, textAlign: "center" }}>
+                Send 1 NFT to the Vault to start. If another wallet already has a life,
+                switch to it and your pet will continue from there.
+              </div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+                {!isConnected ? (
+                  <button className="btn btn-primary btn-lg" onClick={() => setPickerOpen(true)}>
+                    Connect Wallet
+                  </button>
+                ) : (
+                  <button className="btn btn-primary btn-lg" onClick={() => setVaultOpen(true)}>
+                    Send NFT (+1 life)
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+        </>
+      )}
 
       {gate === "game" && (
         <div style={{ maxWidth: 980, margin: "0 auto" }}>
