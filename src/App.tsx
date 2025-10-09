@@ -1,6 +1,5 @@
 // src/App.tsx
-// UI совпадает со старым вариантом; адаптировано под текущий wagmi v2 конфиг из utils/wagmiConfigLike.ts
-// Комментарии на английском.
+// English-only comments.
 
 import React, { useEffect, useState } from "react";
 import { useAccount, useConnect, useDisconnect, useChainId } from "wagmi";
@@ -12,7 +11,7 @@ import MuteButton from "./audio/MuteButton";
 import Tamagotchi from "./components/Tamagotchi";
 import VaultPanel from "./components/VaultPanel";
 
-/** ===== local storage helpers ===== */
+/* ---------- small helpers ---------- */
 const ls = {
   get: (k: string) => {
     try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; }
@@ -25,7 +24,7 @@ const ls = {
 const CHAIN_ID = MONAD.id;
 const PENDING_LIFE_KEY = "wg_pending_life";
 
-/** Lives (optimistic + namespaced by chain+address) */
+/* Lives (namespaced per chain+address, with optimistic bump) */
 function useOptimisticLives(address?: string | null) {
   const [lives, setLives] = useState<number>(0);
   useEffect(() => {
@@ -35,7 +34,6 @@ function useOptimisticLives(address?: string | null) {
     try {
       const raw = localStorage.getItem("wg_lives_v1");
       const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
-      // if optimistic flag set, at least 1
       const optimisticFor = ls.get(PENDING_LIFE_KEY) as string | null;
       const base = map[k] ?? 0;
       setLives(optimisticFor && optimisticFor.toLowerCase() === addr ? Math.max(base, 1) : base);
@@ -44,7 +42,7 @@ function useOptimisticLives(address?: string | null) {
   return lives;
 }
 
-/** ===== TopBar ===== */
+/* ---------- header ---------- */
 function TopBar({ onOpenVault }: { onOpenVault: () => void }) {
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending } = useConnect();
@@ -54,7 +52,7 @@ function TopBar({ onOpenVault }: { onOpenVault: () => void }) {
 
   return (
     <header className="topbar" style={{ paddingRight: 8 }}>
-      {/* Brand */}
+      {/* brand */}
       <div className="brand" style={{ gap: 10, minWidth: 240, whiteSpace: "nowrap", overflow: "hidden" }}>
         <div className="logo" style={{ display: "grid", placeItems: "center", marginRight: 2 }}>
           <span aria-hidden style={{ fontSize: 20, lineHeight: 1 }}>🥚</span>
@@ -64,7 +62,7 @@ function TopBar({ onOpenVault }: { onOpenVault: () => void }) {
         </div>
       </div>
 
-      {/* Right side */}
+      {/* right side */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto", flexWrap: "wrap" }}>
         {isConnected ? (
           <>
@@ -77,17 +75,22 @@ function TopBar({ onOpenVault }: { onOpenVault: () => void }) {
           </>
         ) : (
           <>
-            {connectors.map((c) => (
-              <button
-                key={c.uid}
-                disabled={!c.ready || isPending}
-                className="btn"
-                onClick={() => connect({ connector: c })}
-                title={c.name}
-              >
-                {c.name}
-              </button>
-            ))}
+            {connectors.map((c) => {
+              const key = (c as any).id ?? (c as any).uid ?? c.name;
+              const disabled = !c.ready; // do not block on "pending"
+              const title = !c.ready ? "Not installed" : `Connect with ${c.name}`;
+              return (
+                <button
+                  key={key}
+                  className="btn"
+                  disabled={disabled}
+                  title={title}
+                  onClick={() => connect({ connector: c })}
+                >
+                  {c.name}
+                </button>
+              );
+            })}
             <MuteButton />
           </>
         )}
@@ -96,7 +99,7 @@ function TopBar({ onOpenVault }: { onOpenVault: () => void }) {
   );
 }
 
-/** ===== App body ===== */
+/* ---------- app body ---------- */
 function AppInner() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
@@ -108,12 +111,11 @@ function AppInner() {
   const livesCount = useOptimisticLives(address);
   const activeAddr = address ?? null;
 
-  // Wire game events -> vault / lives
+  // Game events <-> UI wiring
   useEffect(() => {
     const onRequestNft = () => setVaultOpen(true);
     const onConfirmed = () => {
       if (activeAddr) {
-        // optimistic +1
         ls.set(PENDING_LIFE_KEY, activeAddr);
         const key = `${CHAIN_ID}:${activeAddr.toLowerCase()}`;
         const raw = localStorage.getItem("wg_lives_v1");
@@ -133,11 +135,9 @@ function AppInner() {
     };
   }, [activeAddr]);
 
-  // Gate like before: splash / locked / game
   const gate: "splash" | "locked" | "game" =
     !isConnected ? "splash" : (forceGame || livesCount > 0) ? "game" : "locked";
 
-  // Tamagotchi needs a stable key per (chain, address)
   const tamaKey = `wg-${String(chainId ?? CHAIN_ID)}-${String(activeAddr || "none")}`;
 
   return (
@@ -158,7 +158,6 @@ function AppInner() {
 
       {gate === "locked" && (
         <>
-          {/* Mount game even when locked so death overlay can appear */}
           <div style={{ maxWidth: 980, margin: "0 auto" }}>
             <Tamagotchi
               key={tamaKey}
@@ -201,12 +200,20 @@ function AppInner() {
         </div>
       )}
 
-      {/* Connect modal */}
+      {/* connect modal */}
       {pickerOpen && (
-        <ConnectModal onClose={() => setPickerOpen(false)} />
+        <div onClick={() => setPickerOpen(false)} className="modal">
+          <div onClick={(e) => e.stopPropagation()} className="card" style={{ width: 460, maxWidth: "92vw" }}>
+            <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>
+              Connect a wallet
+            </div>
+
+            <WalletButtons />
+          </div>
+        </div>
       )}
 
-      {/* Vault modal */}
+      {/* vault modal */}
       {vaultOpen && (
         <div onClick={() => setVaultOpen(false)} className="modal">
           <div onClick={(e) => e.stopPropagation()} className="card" style={{ width: 520, maxWidth: "92vw" }}>
@@ -225,34 +232,32 @@ function AppInner() {
   );
 }
 
-/** ===== Connect modal rendered with useConnect() connectors ===== */
-function ConnectModal({ onClose }: { onClose: () => void }) {
-  const { connect, connectors, status } = useConnect();
+/* Standalone buttons list so it can be reused */
+function WalletButtons() {
+  const { connect, connectors } = useConnect();
   return (
-    <div onClick={onClose} className="modal">
-      <div onClick={(e) => e.stopPropagation()} className="card" style={{ width: 460, maxWidth: "92vw" }}>
-        <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>
-          Connect a wallet
-        </div>
-        <div className="wallet-grid">
-          {connectors.map((c) => (
-            <button
-              key={c.uid}
-              className="btn"
-              disabled={status === "pending" || !c.ready}
-              onClick={() => connect({ connector: c })}
-              title={c.name}
-            >
-              {c.name}
-            </button>
-          ))}
-        </div>
-      </div>
+    <div className="wallet-grid">
+      {connectors.map((c) => {
+        const key = (c as any).id ?? (c as any).uid ?? c.name;
+        const disabled = !c.ready;
+        const title = !c.ready ? "Not installed" : `Connect with ${c.name}`;
+        return (
+          <button
+            key={key}
+            className="btn"
+            disabled={disabled}
+            title={title}
+            onClick={() => connect({ connector: c })}
+          >
+            {c.name}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-/** ===== Export with audio provider (wagmi/query providers are in main.tsx) ===== */
+/* Export with audio provider (wagmi/query providers live in main.tsx) */
 export default function App() {
   return (
     <AudioProvider>
