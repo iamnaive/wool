@@ -211,11 +211,11 @@ function AppInner() {
     const onFeed = () => audio.playEatSfx();
     const onCatStart = () => audio.playCatastrophe();
     const onCatEnd = () => audio.playCatEnd();
-    window.addEventListener("wg:fed", onFeed as any);
+    window.addEventListener("wg:feed", onFeed as any);
     window.addEventListener("wg:catastrophe-start", onCatStart as any);
     window.addEventListener("wg:catastrophe-end", onCatEnd as any);
     return () => {
-      window.removeEventListener("wg:fed", onFeed as any);
+      window.removeEventListener("wg:feed", onFeed as any);
       window.removeEventListener("wg:catastrophe-start", onCatStart as any);
       window.removeEventListener("wg:catastrophe-end", onCatEnd as any);
     };
