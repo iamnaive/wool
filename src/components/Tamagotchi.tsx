@@ -48,7 +48,7 @@ const SLEEP_FROM_KEY = "sleep_from_v1";
 const SLEEP_TO_KEY = "sleep_to_v1";
 const CATA_SCHEDULE_KEY = "cata_schedule_v2";
 const CATA_CONSUMED_KEY = "cata_consumed_v2";
-const CATA_ACTIVE_KEY = "cata_active_v1"; // persist active catastrophe across evolution
+const CATA_ACTIVE_KEY = "cata_active_v1";
 const FORM_KEY = "form_v1";
 const STATS_KEY = "stats_v1";
 const SICK_KEY = "sick_v1";
@@ -69,7 +69,7 @@ const HEAL_COOLDOWN_MS = 60_000;
 
 /** Food logic */
 const FEED_COOLDOWN_MS = 5_000;
-const FEED_ANIM_TOTAL_MS = 1200; // 3 * 400ms
+const FEED_ANIM_TOTAL_MS = 1200;
 const FEED_FRAMES_COUNT = 3;
 const FEED_EFFECTS = {
   burger: { hunger: +0.28, happiness: +0.06 },
@@ -195,7 +195,7 @@ export default function Tamagotchi({
   const sleepParamsRef = useRef({ useAutoTime, sleepStart, wakeTime, sleepLocked });
   useEffect(() => { sleepParamsRef.current = { useAutoTime, sleepStart, wakeTime, sleepLocked }; }, [useAutoTime, sleepStart, wakeTime, sleepLocked]);
 
-  // ------- Force-dead preview (to show dead sprite after offline death) -------
+  // ------- Force-dead preview -------
   const [forceDeadPreview, setForceDeadPreview] = useState(false);
   const forceDeadPreviewRef = useLatest(forceDeadPreview);
   useEffect(() => {
@@ -215,7 +215,7 @@ export default function Tamagotchi({
   useEffect(() => {
     if ((lives || 0) > 0) setForceDeadPreview(false);
   }, [lives]);
-  // ---------------------------------------------------------------------------
+  // ----------------------------------
 
   /** Canvas & RAF */
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -288,7 +288,7 @@ export default function Tamagotchi({
     return afterStart && beforeWake;
   }
 
-  /** Catastrophe schedule (first in 30s, shifted out of sleep if needed) */
+  /** Catastrophe schedule (first in 30s) */
   useEffect(() => {
     try {
       const schedRaw = localStorage.getItem(sk(CATA_SCHEDULE_KEY));
@@ -296,7 +296,6 @@ export default function Tamagotchi({
       let schedule: number[] = schedRaw ? JSON.parse(schedRaw) : [];
       const consumed: number[] = consumedRaw ? JSON.parse(consumedRaw) : [];
 
-      // first catastrophe after 30s (was 60s)
       let firstAt = startTs + 30_000;
       if (isSleepingAt(firstAt)) {
         const maxShiftMins = 180;
@@ -466,7 +465,6 @@ export default function Tamagotchi({
       if (Math.random() < 0.7) spawnPoop();
       setFoodAnim({ kind: "burger", startedAt: nowMs() });
       setLastBurgerAt(nowMs());
-      // AUDIO: trigger eat SFX
       try { window.dispatchEvent(new CustomEvent("wg:feed")); } catch {}
     },
     feedCake: () => {
@@ -478,7 +476,6 @@ export default function Tamagotchi({
       if (Math.random() < 0.5) spawnPoop();
       setFoodAnim({ kind: "cake", startedAt: nowMs() });
       setLastCakeAt(nowMs());
-      // AUDIO: trigger eat SFX
       try { window.dispatchEvent(new CustomEvent("wg:feed")); } catch {}
     },
     play: () => {
@@ -487,7 +484,7 @@ export default function Tamagotchi({
     },
     clean: () => {
       if (!canClean) return;
-      const startX = LOGICAL_W + 10; // enter from right
+      const startX = LOGICAL_W + 10;
       setCleaning({ x: startX, active: true });
     },
     heal: () => {
@@ -545,10 +542,15 @@ export default function Tamagotchi({
     }
   }, [isDead]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** When new life confirmed → reset */
+  /** When new life confirmed → reset (also cancel forceDeadPreview immediately) */
   useEffect(() => {
     const onConfirmed = () => {
-      if (deadRef.current) performReset();
+      if (deadRef.current || forceDeadPreviewRef.current) {
+        // hide overlay instantly, then full reset
+        setForceDeadPreview(false);
+        setIsDead(false);
+        performReset();
+      }
     };
     window.addEventListener("wg:nft-confirmed", onConfirmed as any);
     return () => window.removeEventListener("wg:nft-confirmed", onConfirmed as any);
@@ -563,7 +565,6 @@ export default function Tamagotchi({
       lastWall = now;
       if (deadRef.current) return;
 
-      // schedule trigger
       try {
         const schedule: number[] = JSON.parse(localStorage.getItem(sk(CATA_SCHEDULE_KEY)) || "[]");
         const consumed: number[] = JSON.parse(localStorage.getItem(sk(CATA_CONSUMED_KEY)) || "[]");
@@ -573,9 +574,8 @@ export default function Tamagotchi({
             if (!isSleepingAt(now)) {
               const active = { cause: pickOne(CATASTROPHE_CAUSES), until: t + CATA_DURATION_MS };
               setCatastrophe(active);
-              localStorage.setItem(sk(CATA_ACTIVE_KEY), JSON.stringify(active)); // persist
+              localStorage.setItem(sk(CATA_ACTIVE_KEY), JSON.stringify(active));
               localStorage.setItem(sk(CATA_CONSUMED_KEY), JSON.stringify([...consumed, t].sort((a,b)=>a-b)));
-              // AUDIO: catastrophe start
               try {
                 window.dispatchEvent(new CustomEvent("wg:catastrophe-start"));
                 window.dispatchEvent(new CustomEvent("wg:catastrophe", { detail: { on: true } }));
@@ -589,7 +589,6 @@ export default function Tamagotchi({
         }
       } catch {}
 
-      // rehydrate persisted catastrophe if still active (covers evolution)
       try {
         const raw = localStorage.getItem(sk(CATA_ACTIVE_KEY));
         if (raw) {
@@ -599,11 +598,9 @@ export default function Tamagotchi({
         }
       } catch {}
 
-      // explicit end transition: when active until has passed
       const curCat = catastropheRef.current;
       if (curCat && now >= (curCat.until ?? 0)) {
         setCatastrophe(null);
-        // AUDIO: catastrophe end
         try {
           window.dispatchEvent(new CustomEvent("wg:catastrophe-end"));
           window.dispatchEvent(new CustomEvent("wg:catastrophe", { detail: { on: false } }));
@@ -678,7 +675,6 @@ export default function Tamagotchi({
     if (!ctx) return;
     (ctx as any).imageSmoothingEnabled = false;
 
-    // size / DPR
     const resize = () => {
       const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
       const containerW = wrap.clientWidth || LOGICAL_W;
@@ -700,12 +696,10 @@ export default function Tamagotchi({
     if ("ResizeObserver" in window) { ro = new (window as any).ResizeObserver(resize); ro.observe(wrap); }
     else { window.addEventListener("resize", resize); }
     resize();
-    // Settle passes: catch late reflow (fonts/scrollbar) before first interaction
     requestAnimationFrame(() => { resize(); setTimeout(() => resize(), 0); });
 
-    // ---- Motion vars ----
     const EDGE_EPS = 2;
-    const TURN_COOLDOWN = 160; // ms
+    const TURN_COOLDOWN = 160;
     let dir: 1 | -1 = 1;
     let x = 40;
     let lastTurnAt = -1e9;
@@ -718,11 +712,8 @@ export default function Tamagotchi({
       const dt = Math.min(100, ts - last);
       last = ts;
 
-      // Clear
-      ctx.clearRect(0, 0, LOGICAL_W, LOGICAL_H);
-
-      // Background
       const bg = images[BG_SRC];
+      ctx.clearRect(0, 0, LOGICAL_W, LOGICAL_H);
       if (bg) {
         const scaleBG = Math.max(LOGICAL_W / bg.width, LOGICAL_H / bg.height);
         const dw = Math.floor(bg.width * scaleBG);
@@ -732,37 +723,29 @@ export default function Tamagotchi({
         ctx.drawImage(bg, dx, dy, dw, dh);
       }
 
-      // ----- Food animation (top-left) -----
       const curFood = foodAnimRef.current;
       if (curFood) {
         const elapsed = Date.now() - curFood.startedAt;
         if (elapsed >= FEED_ANIM_TOTAL_MS) {
           setFoodAnim(null);
         } else {
-          const idx = Math.min(
-            FEED_FRAMES_COUNT - 1,
-            Math.floor((elapsed / FEED_ANIM_TOTAL_MS) * FEED_FRAMES_COUNT)
-          );
-          const list = FEED_FRAMES[curFood.kind];
-          const src = list[idx];
-          const img = images[src];
+          const idx = Math.min(FEED_FRAMES_COUNT - 1, Math.floor((elapsed / FEED_ANIM_TOTAL_MS) * FEED_FRAMES_COUNT));
+          const img = images[FEED_FRAMES[curFood.kind][idx]];
           if (img) {
             const nativeMax = Math.max(img.width, img.height);
             const scale = nativeMax > FOOD_FRAME_MAX_PX ? FOOD_FRAME_MAX_PX / nativeMax : 1;
             const fw = Math.round(img.width * scale);
             const fh = Math.round(img.height * scale);
-            const fx = 8, fy = 8;
-            ctx.drawImage(img, fx, fy, fw, fh);
+            ctx.drawImage(img, 8, 8, fw, fh);
           }
         }
       }
 
-      // --- Top-right avatar ---
       const nowAbs = Date.now();
       const sleepingNow = isSleepingAt(nowAbs);
 
-      // effective "dead" for UI (real death OR forced preview)
-      const deadUi = deadRef.current || forceDeadPreviewRef.current;
+      // ВАЖНО: "мертв" только если нет жизни
+      const deadUi = (lives || 0) <= 0 && (deadRef.current || forceDeadPreviewRef.current);
 
       const avatarAnimKey: AnimKey = (() => {
         if (deadUi) return "idle";
@@ -807,7 +790,6 @@ export default function Tamagotchi({
       ctx.save();
       ctx.translate(0, Y_SHIFT);
 
-      // Poops
       const curPoops = poopsRef.current;
       if (curPoops.length) {
         for (const p of curPoops) {
@@ -819,7 +801,6 @@ export default function Tamagotchi({
         }
       }
 
-      // Choose anim
       const chosenAnim: AnimKey = (() => {
         if (deadUi) return "idle";
         if (sleepingNow) return (def.sleep?.length ? "sleep" : "idle") as AnimKey;
@@ -828,7 +809,6 @@ export default function Tamagotchi({
         return animRef.current;
       })();
 
-      // Frames
       let framesAll = (def[chosenAnim] ?? def.idle ?? def.walk ?? []) as string[];
       framesAll = framesAll.filter(Boolean);
       if (!sleepingNow && framesAll.length < 2 && (def.walk?.length ?? 0) >= 2) framesAll = def.walk!;
@@ -838,13 +818,11 @@ export default function Tamagotchi({
       const rawW = base?.width ?? 32;
       const rawH = base?.height ?? 32;
 
-      // Scale
       const stage = getLifeStage(formRef.current);
       const targetH = stage === "egg" ? EGG_TARGET_H : (stage === "child" ? CHILD_TARGET_H : ADULT_TARGET_H);
       const scale = (targetH / Math.max(1, rawH));
       const drawW = Math.round(rawW * scale), drawH = Math.round(rawH * scale);
 
-      // -------- physics with edge projection + cooldown --------
       const minX = 0;
       const maxX = LOGICAL_W - drawW;
 
@@ -865,7 +843,6 @@ export default function Tamagotchi({
         }
       }
 
-      // Frame switching
       frameTimer += dt;
       if (frameTimer > 1e6) frameTimer %= 1e6;
       let frameIndex = 0;
@@ -874,7 +851,6 @@ export default function Tamagotchi({
         frameIndex = step % frames.length;
       }
 
-      // Draw pet or dead
       if (deadUi) {
         const list = deadCandidates(formRef.current);
         const deadSrc = list.find((p) => images[p]);
@@ -902,7 +878,6 @@ export default function Tamagotchi({
         }
       }
 
-      // Cleaning scoop
       if (cleaningRef.current?.active) {
         const st = cleaningRef.current!;
         const scoopImg = images[SCOOP_SRC];
@@ -920,11 +895,9 @@ export default function Tamagotchi({
         }
       }
 
-      // Banners & catastrophe FX
       ctx.restore();
       const cat = catastropheRef.current;
 
-      // subtle red flash overlay during catastrophe (no logic changes)
       if (cat && nowAbs < cat.until && !deadUi) {
         const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 160);
         const alpha = 0.05 + 0.10 * pulse;
@@ -963,8 +936,8 @@ export default function Tamagotchi({
   /** Clipboard helper */
   const copyAddr = async () => { try { await navigator.clipboard.writeText(NFT_CONTRACT); } catch {} };
 
-  /** Death overlay */
-  const DeathOverlay = (isDead || forceDeadPreview) ? (
+  /** Death overlay — теперь показываем ТОЛЬКО если lives==0 */
+  const DeathOverlay = ((lives || 0) <= 0) && (isDead || forceDeadPreview) ? (
     <OverlayCard>
       <div style={{ fontSize: 18, marginBottom: 6 }}>Your pet has died</div>
       {deathReason && <div className="muted" style={{ marginBottom: 12 }}>Cause: {deathReason}</div>}
@@ -1085,14 +1058,6 @@ type FoodKind = "burger" | "cake";
 type FoodAnim = { kind: FoodKind; startedAt: number };
 type ScoopState = { x: number; active: boolean };
 
-function prettyName(f: FormKey) {
-  if (String(f).endsWith("_child")) {
-    const base = String(f).replace("_child", "");
-    const cap = base === "we" ? "WE" : (base.charAt(0).toUpperCase() + base.slice(1));
-    return `${cap} (child)`;
-  }
-  return f;
-}
 function deadCandidates(form: FormKey): string[] {
   return [`/sprites/${String(form)}/dead.png`, `/sprites/dead/${String(form)}.png`, DEAD_FALLBACK];
 }
@@ -1131,7 +1096,7 @@ function safeReadJSON<T>(key: string): T | null {
   try { const raw = localStorage.getItem(key); if (!raw) return null; return JSON.parse(raw) as T; } catch { return null; }
 }
 
-/** Offline simulator */
+/** Offline simulator — unchanged */
 function simulateOffline(args: {
   startWall: number; minutes: number; startAgeMs: number;
   startStats: Stats; startSick: boolean;
@@ -1150,7 +1115,7 @@ function simulateOffline(args: {
   const healthPerMinSick = 1 / 7;
   const happyPerMinSick  = 1 / 8;
 
-  const hungerPerMinFast = 1; // catastrophe
+  const hungerPerMinFast = 1;
 
   const schedule = [...(args.schedule || [])].sort((a,b)=>a-b);
   const consumedSet = new Set<number>(args.consumed || []);
