@@ -744,8 +744,8 @@ export default function Tamagotchi({
       const nowAbs = Date.now();
       const sleepingNow = isSleepingAt(nowAbs);
 
-      // ВАЖНО: "мертв" только если нет жизни
-      const deadUi = (lives || 0) <= 0 && (deadRef.current || forceDeadPreviewRef.current);
+          // draw as dead whenever deadNow; overlay is handled separately
+     const deadUi = deadNow;
 
       const avatarAnimKey: AnimKey = (() => {
         if (deadUi) return "idle";
@@ -772,9 +772,9 @@ export default function Tamagotchi({
         (ctx as any).imageSmoothingEnabled = false;
         ctx.drawImage(av, ax, ay, aw, ah);
         
-  let hp = Math.round((statsRef.current.health ?? 0) * 100);
- if (!deadUi) hp = Math.max(1, Math.min(100, hp));
- const label = `❤️ ${hp}%`;
+        let hp = Math.round((statsRef.current.health ?? 0) * 100);
+        if (deadNow) hp = 0; // show 0% when dead
+        const label = `❤️ ${hp}%`;
         
         ctx.font = "10px monospace";
         ctx.textBaseline = "top";
