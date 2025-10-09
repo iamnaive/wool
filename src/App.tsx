@@ -188,57 +188,64 @@ function ConnectModal({ onClose }: { onClose: () => void }) {
 function WalletButtons() {
   const { connect, connectors } = useConnect();
 
-  // Normalize to a clean, unique list: MetaMask, Phantom, WalletConnect, Coinbase Wallet
+  // Normalize our connectors into a clean, unique, branded list
   const list = React.useMemo(() => {
-    // Map wagmi connectors -> normalized label + readiness
-    const mapped = connectors.map((c) => {
-      const opts: any = (c as any).options ?? {};
-      const isInjected = c.type === "injected";
-
-      // Explicit labels
-      let label = c.name;
-      if (isInjected && opts?.target === "metaMask") label = "MetaMask";
-      else if (isInjected && typeof opts?.getProvider === "function") label = "Phantom";
-      else if (/walletconnect/i.test(c.name)) label = "WalletConnect";
-      else if (/coinbase/i.test(c.name)) label = "Coinbase Wallet";
-      else if (isInjected) {
-        // Fallback: choose a sane label for any generic injected
-        const hasMM =
+    const mapLabel = (c: any): { label: string; ready: boolean } => {
+      const opts: any = c.options ?? {};
+      // Brand by explicit target or by presence of a brand-specific provider
+      if (opts?.target === "metaMask") {
+        const ready =
           !!(window as any).ethereum?.isMetaMask ||
           (Array.isArray((window as any).ethereum?.providers) &&
             (window as any).ethereum.providers.some((p: any) => p?.isMetaMask));
-        label = hasMM ? "MetaMask" : "Injected";
+        return { label: "MetaMask", ready };
       }
+      if (typeof opts?.getProvider === "function") {
+        // Probe which provider this connector points to (no side effects)
+        const p = opts.getProvider();
+        const isPhantom = !!(p && (p as any).isPhantom);
+        const isBackpack = !!(p && (p as any).isBackpack);
+        const isKeplr = !!(p && ((p as any).isKeplr || (p as any).isKeplrEvm));
+        if (isPhantom) return { label: "Phantom", ready: true };
+        if (isBackpack) return { label: "Backpack", ready: true };
+        if (isKeplr) return { label: "Keplr", ready: true };
+        // If provider is null/undefined -> not installed
+        return { label: "Injected", ready: !!p };
+      }
+      if (/walletconnect/i.test(c.name)) return { label: "WalletConnect", ready: true };
+      if (/coinbase/i.test(c.name)) return { label: "Coinbase Wallet", ready: true };
+      return { label: c.name, ready: true };
+    };
 
-      // Readiness for injected only (WalletConnect/Coinbase are always clickable)
-      const ready =
-        label === "MetaMask"
-          ? !!(
-              (window as any).ethereum?.isMetaMask ||
-              (Array.isArray((window as any).ethereum?.providers) &&
-                (window as any).ethereum.providers.some((p: any) => p?.isMetaMask))
-            )
-          : label === "Phantom"
-          ? !!(window as any).phantom?.ethereum
-          : true;
-
+    const items = connectors.map((c) => {
+      const { label, ready } = mapLabel(c as any);
+      const isInjected = (c.type as string) === "injected";
       return {
         key: (c as any).id ?? (c as any).uid ?? label,
         label,
         connector: c,
-        disabled: isInjected && !ready,
+        disabled: isInjected && !ready, // WC/CB always clickable
+        prio:
+          label === "MetaMask" ? 1 :
+          label === "Phantom" ? 2 :
+          label === "Backpack" ? 3 :
+          label === "Keplr" ? 4 :
+          label === "WalletConnect" ? 5 :
+          label === "Coinbase Wallet" ? 6 : 99,
       };
     });
 
-    // Keep only the first by label (dedupe)
-    const allow = new Set(["MetaMask", "Phantom", "WalletConnect", "Coinbase Wallet"]);
+    // Keep only first instance per label, and keep only the brands we care about
+    const allow = new Set(["MetaMask", "Phantom", "Backpack", "Keplr", "WalletConnect", "Coinbase Wallet"]);
     const seen = new Set<string>();
-    return mapped.filter((it) => {
-      if (!allow.has(it.label)) return false;
-      if (seen.has(it.label)) return false;
-      seen.add(it.label);
-      return true;
-    });
+    return items
+      .filter((it) => {
+        if (!allow.has(it.label)) return false;
+        if (seen.has(it.label)) return false;
+        seen.add(it.label);
+        return true;
+      })
+      .sort((a, b) => a.prio - b.prio);
   }, [connectors]);
 
   return (
@@ -257,7 +264,6 @@ function WalletButtons() {
     </div>
   );
 }
-
 
 /* ---------- export ---------- */
 export default function App() {
