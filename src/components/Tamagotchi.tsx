@@ -599,7 +599,9 @@ export default function Tamagotchi({
       } catch {}
 
       const curCat = catastropheRef.current;
-      if (curCat && now >= (curCat.until ?? 0)) {
+      if (curCat && now < (curCat.until ?? 0)) {
+        // still active
+      } else if (curCat && now >= (curCat.until ?? 0)) {
         setCatastrophe(null);
         try {
           window.dispatchEvent(new CustomEvent("wg:catastrophe-end"));
@@ -744,7 +746,7 @@ export default function Tamagotchi({
       const nowAbs = Date.now();
       const sleepingNow = isSleepingAt(nowAbs);
 
-      // ВАЖНО: "мертв" только если нет жизни
+      // Important: show “dead” only if player has no lives
       const deadUi = (lives || 0) <= 0 && (deadRef.current || forceDeadPreviewRef.current);
 
       const avatarAnimKey: AnimKey = (() => {
@@ -936,7 +938,7 @@ export default function Tamagotchi({
   /** Clipboard helper */
   const copyAddr = async () => { try { await navigator.clipboard.writeText(NFT_CONTRACT); } catch {} };
 
-  /** Death overlay — теперь показываем ТОЛЬКО если lives==0 */
+  /** Death overlay — only when no lives */
   const DeathOverlay = ((lives || 0) <= 0) && (isDead || forceDeadPreview) ? (
     <OverlayCard>
       <div style={{ fontSize: 18, marginBottom: 6 }}>Your pet has died</div>
@@ -957,6 +959,26 @@ export default function Tamagotchi({
       </div>
     </OverlayCard>
   ) : null;
+
+  /** ------- WOOL button helper (added, safe) ------- */
+  function renderWoolButton() {
+    const isAdult = form !== "egg" && !String(form).endsWith("_child");
+    const cap   = ({} as any)?.woolCap ?? (props as any)?.woolCap ?? 5;
+    const today = ({} as any)?.woolToday ?? (props as any)?.woolToday ?? 0;
+    const canCollect = isAdult && !isDead && !forceDeadPreview && today < cap;
+    const title = !isAdult
+      ? "Only adults can collect WOOL"
+      : today >= cap
+      ? `Daily cap reached (${today}/${cap})`
+      : "Collect WOOL";
+    const onWoolClick = () => window.dispatchEvent(new CustomEvent("wg:wool-collect-request", { detail: {} }));
+    return (
+      <button className="btn" onClick={onWoolClick} disabled={!canCollect} title={title}>
+        🧶 WOOL{typeof today === "number" ? ` (${today}/${cap})` : ""}
+      </button>
+    );
+  }
+  /** ---------------------------------------------- */
 
   /** ===== UI ===== */
   return (
@@ -996,254 +1018,146 @@ export default function Tamagotchi({
           pointerEvents: (isDead || forceDeadPreview) ? ("none" as const) : ("auto" as const),
         }}
       >
-        {(() => {
-  // Minimal adult check compatible with your forms:
-  // adult = not egg and not *_child
-  const isAdult =
-    form !== "egg" && !String(form).endsWith("_child");
+        {/* WOOL (enabled) */}
+        {renderWoolButton()}
 
-  // These props will be passed from App.tsx.
-  // If you haven't wired them yet, defaults are safe.
-  const cap   = (props as any)?.woolCap ?? 5;
-  const today = (props as any)?.woolToday ?? 0;
-
-  // Don't allow when dead or in dead preview
-  const canCollect =
-    isAdult && !isDead && !forceDeadPreview && today < cap;
-
-  const onWoolClick = () => {
-    // Ask App.tsx to collect. App should:
-    //  - POST /wool/collect
-    //  - dispatch "wg:wool-updated" on success
-    const ev = new CustomEvent("wg:wool-collect-request", { detail: {} });
-    window.dispatchEvent(ev);
-  };
-
-  return (
-    <button
-      className="btn"
-      onClick={onWoolClick}
-      disabled={!canCollect}
-      title={
-        !isAdult
-          ? "Only adults can collect WOOL"
-          : today >= cap
-          ? `Daily cap reached (${today}/${cap})`
-          : "Collect WOOL"
-      }
-    >
-      🧶 WOOL{typeof today === "number" ? ` (${today}/${cap})` : ""}
-    </button>
-  );
-})()}
-
+        {/* Food */}
+        <button className="btn" onClick={act.feedBurger} disabled={burgerLeft > 0}>
+          🍔 Burger{burgerLeft > 0 ? ` (${Math.ceil(burgerLeft / 1000)}s)` : ``}
+        </button>
+        <button className="btn" onClick={act.feedCake} disabled={cakeLeft > 0}>
+          🍰 Cake{cakeLeft > 0 ? ` (${Math.ceil(cakeLeft / 1000)}s)` : ``}
         </button>
 
-        <button className="btn" onClick={act.feedBurger} disabled={burgerLeft>0}>🍔 Burger{burgerLeft>0?` (${Math.ceil(burgerLeft/1000)}s)`:``}</button>
-        <button className="btn" onClick={act.feedCake} disabled={cakeLeft>0}>🍰 Cake{cakeLeft>0?` (${Math.ceil(cakeLeft/1000)}s)`:``}</button>
+        {/* Other actions */}
         <button className="btn" onClick={act.play}>🎮 Play</button>
-        <button className="btn" onClick={act.heal} disabled={healLeft>0}>💊 Heal{healLeft>0?` (${Math.ceil(healLeft/1000)}s)`:``}</button>
+        <button className="btn" onClick={act.heal} disabled={healLeft > 0}>
+          💊 Heal{healLeft > 0 ? ` (${Math.ceil(healLeft / 1000)}s)` : ``}
+        </button>
         <button className="btn" onClick={act.clean}>🧻 Clean</button>
-      </div>
-
-      {/* Sleep controls */}
-      <div
-        style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", justifyContent: "center" }}
-      >
-        <label style={{ display: "flex", alignItems: "center", gap: 6, opacity: sleepLocked ? 0.5 : 1 }}>
-          <input type="checkbox" checked={useAutoTime} disabled={sleepLocked} onChange={(e) => setUseAutoTime(e.target.checked)} />
-          Auto local sleep 22:00–08:30
-        </label>
-        {!useAutoTime && (
-          <>
-            <span className="muted">Sleep:</span>
-            <input className="input" type="time" value={sleepStart} disabled={sleepLocked} onChange={(e) => setSleepStart(e.target.value)} />
-            <span className="muted">Wake:</span>
-            <input className="input" type="time" value={wakeTime} disabled={sleepLocked} onChange={(e) => setWakeTime(e.target.value)} />
-          </>
-        )}
-        {!sleepLocked ? (
-          <button
-            className="btn"
-            onClick={() => {
-              localStorage.setItem(sk(SLEEP_FROM_KEY), sleepStart);
-              localStorage.setItem(sk(SLEEP_TO_KEY), wakeTime);
-              localStorage.setItem(sk(SLEEP_LOCK_KEY), "1");
-              setSleepLocked(true);
-              setUseAutoTime(false);
-            }}
-          >
-            Save & lock
-          </button>
-        ) : (
-          <span className="muted">Sleep window locked</span>
-        )}
       </div>
     </div>
   );
 }
 
-/** ===== Types & helpers ===== */
-type AnimKey = "idle" | "walk" | "sick" | "sad" | "unhappy" | "sleep";
-type Stats = { cleanliness: number; hunger: number; happiness: number; health: number };
-type Poop = { x: number; src: string };
-type Catastrophe = { cause: string; until: number };
-type FoodKind = "burger" | "cake";
-type FoodAnim = { kind: FoodKind; startedAt: number };
-type ScoopState = { x: number; active: boolean };
-
+/** ===== Helpers, drawing, types ===== */
 function deadCandidates(form: FormKey): string[] {
-  return [`/sprites/${String(form)}/dead.png`, `/sprites/dead/${String(form)}.png`, DEAD_FALLBACK];
+  const f = String(form);
+  const lower = f.toLowerCase();
+  if (lower.includes("chog"))     return ["/sprites/death/chog.png", DEAD_FALLBACK];
+  if (lower.includes("molandak")) return ["/sprites/death/molandak.png", DEAD_FALLBACK];
+  if (lower.includes("moyaki"))   return ["/sprites/death/moyaki.png", DEAD_FALLBACK];
+  if (lower.includes("we"))       return ["/sprites/death/we.png", DEAD_FALLBACK];
+  return [DEAD_FALLBACK];
 }
-function useLatest<T>(v: T) { const r = useRef(v); useEffect(() => { r.current = v; }, [v]); return r; }
-function clamp01(x: number) { return Math.max(0, Math.min(1, x)); }
-function clampStats(s: Stats): Stats { return { cleanliness: clamp01(s.cleanliness), hunger: clamp01(s.hunger), happiness: clamp01(s.happiness), health: clamp01(s.health) }; }
-function pickOne<T>(arr: readonly T[]): T { return arr[Math.floor(Math.random() * arr.length)]!; }
-function randInt(min: number, max: number) { return Math.floor(min + Math.random() * (max - min + 1)); }
-function clampDt(ms: number): number { if (!Number.isFinite(ms) || ms < 0) return 0; return Math.min(ms, 10 * 60 * 1000); }
-async function loadImageSafe(src: string): Promise<{ src: string; img: HTMLImageElement } | null> {
-  return new Promise((resolve) => {
-    try { const img = new Image(); img.crossOrigin = "anonymous"; img.onload = () => resolve({ src, img }); img.onerror = () => resolve(null); img.src = src; }
-    catch { resolve(null); }
-  });
-}
-function drawBanner(ctx: CanvasRenderingContext2D, width: number, text: string) {
+
+function drawBanner(ctx: CanvasRenderingContext2D, W: number, txt: string) {
   ctx.save();
-  ctx.font = "14px monospace";
-  ctx.textBaseline = "middle";
-  const padX = 8, padY = 4;
-  const m = ctx.measureText(text);
-  const textW = Math.ceil(m.width);
-  const textH = Math.ceil((m.actualBoundingBoxAscent ?? 10) + (m.actualBoundingBoxDescent ?? 4));
-  const bw = textW + padX * 2;
-  const bh = textH + padY * 2;
-  const x = Math.round((width - bw) / 2);
-  const y = 10;
+  ctx.font = "11px monospace";
+  const pad = 4; const y = 4;
+  const w = Math.ceil(ctx.measureText(txt).width) + pad * 2;
   ctx.fillStyle = "rgba(0,0,0,0.55)";
-  ctx.fillRect(x, y, bw, bh);
+  ctx.fillRect(Math.max(0, Math.min(W - w - 4, 6)), y, w, 16);
   ctx.fillStyle = "#fff";
-  ctx.fillText(text, x + padX, y + bh / 2);
+  ctx.fillText(txt, Math.max(0, Math.min(W - w - 4, 6)) + pad, y + 4);
   ctx.restore();
 }
 
-function safeReadJSON<T>(key: string): T | null {
-  try { const raw = localStorage.getItem(key); if (!raw) return null; return JSON.parse(raw) as T; } catch { return null; }
+function clampStats(s: Stats): Stats {
+  return {
+    cleanliness: clamp01(s.cleanliness),
+    hunger:      clamp01(s.hunger),
+    happiness:   clamp01(s.happiness),
+    health:      clamp01(s.health),
+  };
 }
 
-/** Offline simulator — unchanged */
-function simulateOffline(args: {
-  startWall: number; minutes: number; startAgeMs: number;
-  startStats: Stats; startSick: boolean;
+function clamp01(x: number) { return Math.max(0, Math.min(1, x)); }
+function clampDt(x: number) { return Math.max(0, Math.min(x, 5000)); }
+function pickOne<T>(arr: readonly T[]): T { return arr[Math.floor(Math.random() * arr.length)] as T; }
+
+function useLatest<T>(v: T) {
+  const r = useRef(v);
+  useEffect(() => { r.current = v; }, [v]);
+  return r;
+}
+
+async function loadImageSafe(src: string) {
+  try {
+    const img = new Image();
+    img.decoding = "async";
+    img.loading = "eager";
+    img.src = src;
+    await img.decode().catch(() => {});
+    return { src, img };
+  } catch {
+    return null;
+  }
+}
+
+/** Types */
+type AnimKey = "idle" | "walk" | "sick" | "sad" | "unhappy" | "sleep";
+type FoodKind = keyof typeof FEED_FRAMES;
+type FoodAnim = { kind: FoodKind; startedAt: number };
+type Poop = { x: number; src: string };
+type ScoopState = { x: number; active: boolean };
+type Stats = { cleanliness: number; hunger: number; happiness: number; health: number };
+
+/** Offline sim */
+function simulateOffline(params: {
+  startWall: number;
+  minutes: number;
+  startAgeMs: number;
+  startStats: Stats;
+  startSick: boolean;
   sleepCheck: (ts: number) => boolean;
-  schedule: number[]; consumed: number[];
-}): { stats: Stats; sick: boolean; newConsumed: number[]; died: boolean; deathReason?: string; wasCatastrophe?: boolean; wasSick?: boolean } {
-  let s = { ...args.startStats };
-  let sick = args.startSick;
-  const newly: number[] = [];
-
-  const hungerPerMinNormal = 1 / 90;
-  const healthPerMinNormal = 1 / (10 * 60);
-  const happyPerMinNormal  = 1 / (12 * 60);
-  const dirtPerMinNormal   = 1 / (12 * 60);
-
-  const healthPerMinSick = 1 / 7;
-  const happyPerMinSick  = 1 / 8;
-
-  const hungerPerMinFast = 1;
-
-  const schedule = [...(args.schedule || [])].sort((a,b)=>a-b);
-  const consumedSet = new Set<number>(args.consumed || []);
-
+  schedule: number[];
+  consumed: number[];
+}) {
+  const { startWall, minutes, startAgeMs, startStats, startSick, sleepCheck, schedule, consumed } = params;
+  let stats = { ...startStats };
+  let sick = startSick;
   let died = false;
-  let deathReason: string | undefined;
+  let deathReason: string | null = null;
   let wasCatastrophe = false;
-  let wasSickAtDeath = false;
+  const newConsumed: number[] = [];
 
-  for (let i = 0; i < args.minutes; i++) {
-    const minuteWall = args.startWall + i * 60000;
-    const sleeping = args.sleepCheck(minuteWall);
+  for (let i = 0; i < minutes; i++) {
+    const t = startWall + i * 60_000;
+    const sleeping = sleepCheck(t);
 
-    let catastropheActive = false;
-    for (const t of schedule) {
-      if (consumedSet.has(t)) continue;
-      if (minuteWall >= t && minuteWall < t + CATA_DURATION_MS && !sleeping) {
-        catastropheActive = true;
-        newly.push(t);
-        consumedSet.add(t);
-        break;
+    let fast = false;
+    for (const s of schedule) {
+      if (consumed.includes(s)) continue;
+      if (t >= s && t < s + CATA_DURATION_MS && !sleeping) {
+        fast = true; wasCatastrophe = true;
+        if (!newConsumed.includes(s)) newConsumed.push(s);
       }
     }
 
     if (!sleeping) {
-      const hungerDrop = catastropheActive ? hungerPerMinFast : hungerPerMinNormal;
-      const healthDrop = sick ? healthPerMinSick : healthPerMinNormal;
-      const happyDrop  = sick ? happyPerMinSick  : happyPerMinNormal;
-      const dirtDrop   = dirtPerMinNormal;
+      const hungerPerMs = fast ? 1 / 60000 : 1 / (90 * 60 * 1000);
+      const healthPerMs = sick ? 1 / (7 * 60 * 1000) : 1 / (10 * 60 * 60 * 1000);
+      const happyPerMs  = sick ? 1 / (8 * 60 * 1000) : 1 / (12 * 60 * 60 * 1000);
+      const dirtPerMs   = 1 / (10 * 60 * 60 * 1000);
 
-      s = clampStats({
-        cleanliness: s.cleanliness - dirtDrop,
-        hunger:      s.hunger      - hungerDrop,
-        happiness:   s.happiness   - happyDrop,
-        health:      s.health      - healthDrop,
+      stats = clampStats({
+        cleanliness: stats.cleanliness - dirtPerMs * 60_000,
+        hunger:      stats.hunger      - hungerPerMs * 60_000,
+        happiness:   stats.happiness   - happyPerMs  * 60_000,
+        health:      stats.health      - healthPerMs * 60_000,
       });
 
-      if (s.hunger <= 0 || s.health <= 0) {
+      if (stats.hunger <= 0 || stats.health <= 0) {
         died = true;
-        wasCatastrophe = catastropheActive;
-        wasSickAtDeath = sick;
-        deathReason =
-          s.hunger <= 0 ? "starvation"
-          : catastropheActive ? "fatal event"
-          : sick ? "illness" : "collapse";
+        deathReason = stats.hunger <= 0 ? "starvation" : sick ? "illness" : (fast ? "fatal event" : "collapse");
         break;
       }
 
-      if (!sick) {
-        const lowClean = 1 - s.cleanliness;
-        const p = 0.02 + 0.3 * 0.3 + 0.2 * lowClean;
-        if (Math.random() < p * 0.03 * 60) sick = true;
-      } else {
-        if (Math.random() < 0.015 * 60) sick = false;
-      }
+      if (!sick && Math.random() < 0.002) sick = true;
+      if (sick && Math.random() < 0.0015) sick = false;
     }
   }
 
-  return { stats: clampStats(s), sick, newConsumed: newly, died, deathReason, wasCatastrophe, wasSick: wasSickAtDeath };
-}
-
-/** Tiny UI atoms */
-function Bar({ label, value, h = 6 }: { label: string; value: number; h?: number }) {
-  const pct = Math.max(0, Math.min(1, value)) * 100;
-  return (
-    <div>
-      <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 4 }}>{label}</div>
-      <div
-        style={{
-          height: h,
-          width: "100%",
-          borderRadius: Math.max(6, h),
-          background: "rgba(255,255,255,0.08)",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            width: `${pct}%`,
-            height: "100%",
-            background:
-              "linear-gradient(90deg, rgba(124,77,255,0.9), rgba(0,200,255,0.9))",
-          }}
-        />
-      </div>
-    </div>
-  );
-}
-function OverlayCard({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", background: "rgba(0,0,0,0.45)", backdropFilter: "blur(2px)" }}>
-      <div className="card" style={{ padding: 14, borderRadius: 12, minWidth: 260, textAlign: "center", background: "rgba(10,10,18,0.85)", border: "1px solid rgba(255,255,255,0.12)" }}>
-        {children}
-      </div>
-    </div>
-  );
+  return { stats, sick, died, deathReason, wasCatastrophe, newConsumed };
 }
