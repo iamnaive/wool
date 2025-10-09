@@ -1,5 +1,5 @@
 // src/utils/wagmiConfigLike.ts
-// Safe wagmi v2 config for Monad testnet with explicit MetaMask & Phantom connectors.
+// Wagmi v2 config with explicit injected connectors for MetaMask, Phantom, Backpack, Keplr.
 
 import { createConfig, http, fallback } from "wagmi";
 import { injected, coinbaseWallet, walletConnect } from "wagmi/connectors";
@@ -25,27 +25,53 @@ export const MONAD = defineChain({
   testnet: true,
 });
 
+// Helpers to safely read optional globals
+const get = (path: string): any => {
+  try {
+    // e.g. "phantom.ethereum"
+    return path.split(".").reduce((acc: any, k) => (acc ? acc[k] : undefined), globalThis as any);
+  } catch {
+    return undefined;
+  }
+};
+
 // --- Connectors ---
-// 1) MetaMask-only injected (stable with shimDisconnect)
-// 2) Phantom EVM-only injected via explicit getProvider (works even if MetaMask is present)
-// 3) Coinbase Wallet
-// 4) WalletConnect (optional)
+// We define one injected connector per brand. If provider is missing, wagmi marks it not-ready.
 const connectors = [
+  // MetaMask
   injected({
     shimDisconnect: true,
     target: "metaMask",
   }),
+
+  // Phantom (EVM must be enabled in extension)
   injected({
     shimDisconnect: true,
-    // Force Phantom EVM provider
-    // (Phantom must have EVM wallet enabled in extension settings)
-    // @ts-expect-error wagmi accepts custom getProvider at runtime
-    getProvider: () => (globalThis as any).phantom?.ethereum ?? null,
+    // @ts-expect-error: wagmi accepts getProvider at runtime
+    getProvider: () => get("phantom.ethereum") ?? null,
   }),
+
+  // Backpack (EVM provider lives on window.backpack.ethereum)
+  injected({
+    shimDisconnect: true,
+    // @ts-expect-error
+    getProvider: () => get("backpack.ethereum") ?? null,
+  }),
+
+  // Keplr (some builds expose EVM provider on window.keplr.ethereum or window.keplrEvm)
+  injected({
+    shimDisconnect: true,
+    // @ts-expect-error
+    getProvider: () => get("keplr.ethereum") ?? get("keplrEvm") ?? null,
+  }),
+
+  // Coinbase Wallet
   coinbaseWallet({
     appName: APP_NAME,
     preference: "all",
   }),
+
+  // WalletConnect
   ...(WC_PROJECT_ID
     ? [
         walletConnect({
