@@ -86,7 +86,9 @@ function AppInner() {
   const [isVaultOpen, setIsVaultOpen] = useState(false);
   const [forceGame, setForceGame] = useState(false);
 
+  // keep original hook (do not delete)
   const livesCount = useOptimisticLives(address);
+
   const activeAddr = address ?? null;
 
   // helper to write lives
@@ -101,18 +103,29 @@ function AppInner() {
     } catch {}
   };
 
+  // local lives state to immediately reflect changes in UI/gate
+  const readLives = (addr?: string | null) => {
+    const a = (addr || "").toLowerCase();
+    if (!a) return 0;
+    try {
+      const raw = localStorage.getItem(LIVES_KEY);
+      const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+      return Math.max(0, Number(map[`${CHAIN_ID}:${a}`] || 0));
+    } catch {
+      return 0;
+    }
+  };
+  const [lives, setLives] = useState<number>(() => readLives(address));
+  useEffect(() => { setLives(readLives(address)); }, [address]);
+
   // decrement once on death from child
   const handleLoseLife = () => {
     const a = (activeAddr || "").toLowerCase();
     if (!a) return;
-    try {
-      const raw = localStorage.getItem(LIVES_KEY);
-      const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
-      const key = `${CHAIN_ID}:${a}`;
-      const next = Math.max(0, (map[key] ?? 0) - 1);
-      map[key] = next;
-      localStorage.setItem(LIVES_KEY, JSON.stringify(map));
-    } catch {}
+    const cur = readLives(activeAddr);
+    const next = Math.max(0, cur - 1);
+    writeLives(activeAddr, next);
+    setLives(next);       // reflect immediately
     setForceGame(false);
   };
 
@@ -129,11 +142,10 @@ function AppInner() {
     const onConfirmed = () => {
       if (activeAddr) {
         ls.set(PENDING_LIFE_KEY, activeAddr);
-        const key = `${CHAIN_ID}:${activeAddr.toLowerCase()}`;
-        const raw = localStorage.getItem(LIVES_KEY);
-        const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
-        map[key] = (map[key] ?? 0) + 1;
-        localStorage.setItem(LIVES_KEY, JSON.stringify(map));
+        const cur = readLives(activeAddr);
+        const next = cur + 1;
+        writeLives(activeAddr, next);
+        setLives(next); // reflect immediately
       }
       setIsVaultOpen(false);
       setForceGame(true);
@@ -147,7 +159,7 @@ function AppInner() {
   }, [activeAddr]);
 
   const gate: "splash" | "locked" | "game" =
-    !isConnected ? "splash" : (forceGame || livesCount > 0) ? "game" : "locked";
+    !isConnected ? "splash" : (forceGame || lives > 0) ? "game" : "locked";
 
   const tamaKey = `wg-${String(chainId ?? CHAIN_ID)}-${String(activeAddr || "none")}`;
 
@@ -193,8 +205,8 @@ function AppInner() {
             key={tamaKey}
             walletAddress={activeAddr || undefined}
             currentForm={"egg" as any}
-            lives={livesCount}
-            onLoseLife={handleLoseLife}
+            lives={lives}                 // use live state
+            onLoseLife={handleLoseLife}   // decrement exactly once
           />
         </div>
       )}
