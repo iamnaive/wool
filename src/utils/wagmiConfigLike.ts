@@ -1,5 +1,5 @@
 // src/utils/wagmiConfigLike.ts
-// Safe wagmi v2 config for Monad testnet + explicit MetaMask & Phantom injected connectors
+// Safe wagmi v2 config for Monad testnet with explicit MetaMask & Phantom connectors.
 
 import { createConfig, http, fallback } from "wagmi";
 import { injected, coinbaseWallet, walletConnect } from "wagmi/connectors";
@@ -9,7 +9,6 @@ import { defineChain } from "viem";
 const CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID ?? 10143);
 const RPC_URL = String(import.meta.env.VITE_RPC_URL ?? "https://testnet.monad-rpc.org");
 const APP_NAME = String(import.meta.env.VITE_APP_NAME ?? "Wooligotchi");
-// accept both env names for WalletConnect
 const WC_PROJECT_ID =
   (import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as string | undefined) ??
   (import.meta.env.VITE_WC_PROJECT_ID as string | undefined);
@@ -23,28 +22,30 @@ export const MONAD = defineChain({
     default: { http: [RPC_URL] },
     public: { http: [RPC_URL] },
   },
+  testnet: true,
 });
 
 // --- Connectors ---
-// Important: define EXACT injected targets we want.
-// This avoids crashing on exotic providers (Auro, TronLink) and allows user to pick Phantom.
+// 1) MetaMask-only injected (stable with shimDisconnect)
+// 2) Phantom EVM-only injected via explicit getProvider (works even if MetaMask is present)
+// 3) Coinbase Wallet
+// 4) WalletConnect (optional)
 const connectors = [
-  // MetaMask-only injected
   injected({
     shimDisconnect: true,
     target: "metaMask",
   }),
-  // Phantom EVM-only injected
   injected({
     shimDisconnect: true,
-    target: "phantom",
+    // Force Phantom EVM provider
+    // (Phantom must have EVM wallet enabled in extension settings)
+    // @ts-expect-error wagmi accepts custom getProvider at runtime
+    getProvider: () => (globalThis as any).phantom?.ethereum ?? null,
   }),
-  // Coinbase Wallet
   coinbaseWallet({
     appName: APP_NAME,
     preference: "all",
   }),
-  // WalletConnect (if project id set)
   ...(WC_PROJECT_ID
     ? [
         walletConnect({
