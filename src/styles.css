@@ -191,3 +191,61 @@ pre{ margin:0; white-space:pre-wrap; word-break:break-word; font-family: ui-mono
 .log{
   background:#0c1122; border:1px solid #1b2340; border-radius:12px; padding:12px; color:#dfe3ff; font-size:12px;
 }
+
+/* Ensure main UI layers always receive pointer events */
+.wrap, .topbar, .walletRow, .modal .card, .btn {
+  pointer-events: auto;
+}
+
+/* Wallet buttons grid */
+.wallet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+/* Simple pills for header */
+.pill {
+  padding: 6px 10px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.05);
+  font-size: 12px;
+}
+
+/* Basic modal shell (if you do not have one already) */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
+  z-index: 100;
+}
+
+.card {
+  background: rgba(10,10,18,0.9);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+/* Buttons (align with your existing theme if needed) */
+.btn {
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+}
+
+.btn:hover { background: rgba(255,255,255,0.12); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: rgba(124,77,255,0.9); border-color: rgba(124,77,255,0.9); }
+.btn-lg { padding: 10px 16px; font-size: 14px; }
+
+.btn-ghost {
+  background: transparent;
+  border-color: rgba(255,255,255,0.2);
+}
