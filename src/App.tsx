@@ -1,9 +1,9 @@
 // src/App.tsx
-// Mount Tamagotchi even when locked so DeathOverlay shows after offline death.
 // Comments: English only.
 
 import React, { useEffect, useState } from "react";
 import { WagmiProvider, useAccount, useConnect, useDisconnect, useChainId } from "wagmi";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { config, MONAD } from "./utils/wagmiConfigLike";
 import { AudioProvider } from "./audio/AudioProvider";
@@ -12,56 +12,35 @@ import MuteButton from "./audio/MuteButton";
 import Tamagotchi from "./components/Tamagotchi";
 import VaultPanel from "./components/VaultPanel";
 
-/** ===== Utils ===== */
+/** ===== tiny utils ===== */
 const ls = {
-  get: (k: string) => {
-    try {
-      const v = localStorage.getItem(k);
-      return v ? JSON.parse(v) : null;
-    } catch {
-      return null;
-    }
-  },
-  set: (k: string, v: any) => {
-    try {
-      localStorage.setItem(k, JSON.stringify(v));
-    } catch {}
-  },
+  get: (k: string) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } },
+  set: (k: string, v: any) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
-
 const CHAIN_ID = MONAD.id;
 
-/** ===== Hooks ===== */
+/** ===== hooks ===== */
 function useIsLocked(chainId: number | null, address: string | null) {
   const [locked, setLocked] = useState(true);
-  useEffect(() => {
-    const v = ls.get("wg_locked");
-    setLocked(v === null ? true : Boolean(v));
-  }, [chainId, address]);
+  useEffect(() => { const v = ls.get("wg_locked"); setLocked(v === null ? true : Boolean(v)); }, [chainId, address]);
   return { locked, setLocked };
 }
-
-function useOptimisticLives(address: string | undefined) {
+function useOptimisticLives(address?: string) {
   const [lives, setLives] = useState<number>(0);
   useEffect(() => {
     const addr = address?.toLowerCase();
-    if (!addr) {
-      setLives(0);
-      return;
-    }
+    if (!addr) return setLives(0);
     const k = `${CHAIN_ID}:${addr}`;
-    const raw = localStorage.getItem("wg_lives_v1");
     try {
+      const raw = localStorage.getItem("wg_lives_v1");
       const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
       setLives(map[k] ?? 0);
-    } catch {
-      setLives(0);
-    }
+    } catch { setLives(0); }
   }, [address]);
   return lives;
 }
 
-/** ===== Top bar ===== */
+/** ===== top bar ===== */
 function TopBar() {
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending } = useConnect();
@@ -71,75 +50,33 @@ function TopBar() {
 
   return (
     <div className="topbar" style={{ paddingRight: 8 }}>
-      {/* Brand (emoji egg + name) — reserved width to avoid clipping */}
+      {/* brand */}
       <div
         className="brand"
         style={{
-          gap: 10,
-          minWidth: 220,
-          flex: "0 1 auto",
-          whiteSpace: "nowrap",
-          overflow: "hidden",
+          gap: 10, minWidth: 220, flex: "0 1 auto",
+          whiteSpace: "nowrap", overflow: "hidden",
         }}
       >
-        <div
-          className="logo"
-          style={{
-            display: "grid",
-            placeItems: "center",
-            marginRight: 2,
-            flex: "0 0 auto",
-          }}
-        >
-            <span aria-hidden style={{ fontSize: 20, lineHeight: 1 }}>🥚</span>
+        <div className="logo" style={{ display: "grid", placeItems: "center", marginRight: 2 }}>
+          <span aria-hidden style={{ fontSize: 20, lineHeight: 1 }}>🥚</span>
         </div>
-        <div
-          className="title"
-          style={{
-            fontWeight: 800,
-            fontSize: "clamp(18px, 2.2vw, 26px)",
-            letterSpacing: "0.2px",
-          }}
-        >
+        <div className="title" style={{ fontWeight: 800, fontSize: "clamp(18px,2.2vw,26px)" }}>
           Wooligotchi
         </div>
       </div>
 
-      {/* Right side */}
+      {/* right side */}
       {isConnected ? (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginLeft: "auto",
-            flexWrap: "wrap",
-          }}
-        >
-          <div className="pill" title="Lives">
-            ❤️ Lives: <b>{lives}</b>
-          </div>
-          <div className="pill" title="Network">
-            {MONAD.name} • chain {chainId}
-          </div>
-          <div className="pill" title="Address">
-            {address?.slice(0, 6)}…{address?.slice(-4)}
-          </div>
-          <button className="btn" onClick={() => disconnect()}>
-            Disconnect
-          </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto", flexWrap: "wrap" }}>
+          <div className="pill" title="Lives">❤️ Lives: <b>{lives}</b></div>
+          <div className="pill" title="Network">{MONAD.name} • chain {chainId}</div>
+          <div className="pill" title="Address">{address?.slice(0,6)}…{address?.slice(-4)}</div>
+          <button className="btn" onClick={() => disconnect()}>Disconnect</button>
           <MuteButton />
         </div>
       ) : (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginLeft: "auto",
-            flexWrap: "wrap",
-          }}
-        >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto", flexWrap: "wrap" }}>
           {connectors.map((c) => (
             <button
               key={c.uid}
@@ -158,7 +95,7 @@ function TopBar() {
   );
 }
 
-/** ===== Main body ===== */
+/** ===== body ===== */
 function AppInner() {
   const { address } = useAccount();
   const chainId = useChainId();
@@ -171,12 +108,9 @@ function AppInner() {
   const livesCount = useOptimisticLives(address);
   const activeAddr = address ?? null;
 
-  // Events from Tamagotchi
   useEffect(() => {
     const onRequestNft = () => setVaultOpen(true);
-
     const onConfirmed = () => {
-      // optimistic +1 life locally (real backend may sync later)
       try {
         const addr = activeAddr?.toLowerCase();
         if (!addr) return;
@@ -187,7 +121,6 @@ function AppInner() {
         localStorage.setItem("wg_lives_v1", JSON.stringify(map));
       } catch {}
     };
-
     window.addEventListener("wg:request-nft", onRequestNft as any);
     window.addEventListener("wg:nft-confirmed", onConfirmed as any);
     return () => {
@@ -200,7 +133,6 @@ function AppInner() {
     <div className="page">
       <TopBar />
 
-      {/* Stage area styled by .stage */}
       <div className="stage" style={{ display: "grid", placeItems: "center", padding: 16 }}>
         <Tamagotchi
           chainId={CHAIN_ID}
@@ -215,14 +147,8 @@ function AppInner() {
 
       {pickerOpen && (
         <div onClick={() => setPickerOpen(false)} className="modal">
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="card"
-            style={{ width: 520, maxWidth: "92vw" }}
-          >
-            <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>
-              Pick NFT from Wallet
-            </div>
+          <div onClick={(e) => e.stopPropagation()} className="card" style={{ width: 520, maxWidth: "92vw" }}>
+            <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>Pick NFT from Wallet</div>
             <VaultPanel onClose={() => setPickerOpen(false)} />
           </div>
         </div>
@@ -230,14 +156,8 @@ function AppInner() {
 
       {vaultOpen && (
         <div onClick={() => setVaultOpen(false)} className="modal">
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="card"
-            style={{ width: 520, maxWidth: "92vw" }}
-          >
-            <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>
-              Send NFT to Vault
-            </div>
+          <div onClick={(e) => e.stopPropagation()} className="card" style={{ width: 520, maxWidth: "92vw" }}>
+            <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>Send NFT to Vault</div>
             <VaultPanel onClose={() => setVaultOpen(false)} />
           </div>
         </div>
@@ -246,13 +166,18 @@ function AppInner() {
   );
 }
 
+/** ===== providers root ===== */
+const queryClient = new QueryClient();
+
 export default function App() {
   return (
     <WagmiProvider config={config}>
-      {/* Centralized audio: uses /audio/*.mp3 from public/audio after user gesture */}
-      <AudioProvider>
-        <AppInner />
-      </AudioProvider>
+      <QueryClientProvider client={queryClient}>
+        {/* Centralized audio: uses /audio/*.mp3 from public/audio after user gesture */}
+        <AudioProvider>
+          <AppInner />
+        </AudioProvider>
+      </QueryClientProvider>
     </WagmiProvider>
   );
 }
