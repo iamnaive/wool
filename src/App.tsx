@@ -14,8 +14,8 @@ import {
 } from "wagmi";
 import { injected, walletConnect, coinbaseWallet } from "wagmi/connectors";
 import { defineChain } from "viem";
-import Tamagotchi from "./Tamagotchi";
-import VaultPanel from "./VaultPanel";
+import Tamagotchi from "./components/Tamagotchi";
+import VaultPanel from "./components/VaultPanel";
 
 /** ===== Utils ===== */
 const ls = {
@@ -284,7 +284,7 @@ function AppInner() {
         </section>
       )}
 
-     {gate === "locked" && (
+    {gate === "locked" && (
   <>
     {/* Mount game even when locked so DeathOverlay can show immediately */}
     <div style={{ maxWidth: 980, margin: "0 auto" }}>
@@ -295,7 +295,7 @@ function AppInner() {
       />
     </div>
 
-    {/* Your existing "No lives..." card can stay below */}
+    {/* Твоя существующая карточка "No lives..." — остаётся ниже */}
     <section className="card splash" style={{ maxWidth: 640, margin: "24px auto" }}>
       <div className="splash-inner">
         <div className="splash-title" style={{ marginBottom: 8 }}>
