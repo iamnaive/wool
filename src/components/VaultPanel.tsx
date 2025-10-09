@@ -1,11 +1,10 @@
 'use client';
 
-import { useState } from "react";
+import React, { useState } from "react";
 import type { Address } from "viem";
-const ZERO = "0x0000000000000000000000000000000000000000" as Address;
-import { zeroAddress } from "viem";
-import { useAccount, useConfig, useSwitchChain } from "wagmi";
-import { writeContract, getPublicClient } from "@wagmi/core";
+import { useAccount, useSwitchChain } from "wagmi";
+import { getConfig } from "wagmi";
+import { writeContract, getPublicClient } from "wagmi/actions";
 
 /**
  * VaultPanel (ONE-LINE, ERC-721 only, optimistic confirm)
@@ -13,7 +12,7 @@ import { writeContract, getPublicClient } from "@wagmi/core";
  * - Sends ERC-721 via safeTransferFrom(owner -> VAULT).
  * - Dispatches "wg:nft-confirmed" immediately after tx hash (optimistic),
  *   and repeats the event again when the receipt confirms.
- * - Comments in English only.
+ * - English-only comments.
  *
  * ENV required:
  *  - VITE_CHAIN_ID
@@ -22,10 +21,18 @@ import { writeContract, getPublicClient } from "@wagmi/core";
  * NOTE: Collection address is kept hardcoded for compatibility.
  */
 
+type Props = {
+  onClose?: () => void;
+};
+
 const MONAD_CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID ?? 10143);
+const ZERO = "0x0000000000000000000000000000000000000000" as Address;
 const VAULT: Address = (import.meta.env.VITE_VAULT_ADDRESS as Address) ?? ZERO;
+
+// Allowed collection to send from (ERC-721)
 const ALLOWED_CONTRACT: Address = "0x88c78d5852f45935324c6d100052958f694e8446";
 
+// Minimal write ABI
 const ERC721_WRITE_ABI = [
   {
     type: "function",
@@ -40,29 +47,38 @@ const ERC721_WRITE_ABI = [
   },
 ] as const;
 
-export default function VaultPanel() {
+export default function VaultPanel({ onClose }: Props) {
   const { address, isConnected, chainId } = useAccount();
-  const cfg = useConfig();
-  const pc = getPublicClient(cfg);
   const { switchChain } = useSwitchChain();
+  const cfg = getConfig();
+  const pc = getPublicClient(cfg);
 
   const [idStr, setIdStr] = useState("");
   const [busy, setBusy] = useState(false);
+  const disabled = !isConnected || VAULT === ZERO || busy;
 
   // Fire the in-game event
   function fireConfirmed(addr: Address | undefined) {
-    window.dispatchEvent(new CustomEvent("wg:nft-confirmed", { detail: { address: addr } }));
+    try {
+      window.dispatchEvent(new CustomEvent("wg:nft-confirmed", { detail: { address: addr } }));
+    } catch {}
   }
 
   async function send() {
-    if (!isConnected || !address || VAULT === zeroAddress) return;
+    if (disabled) return;
+    const me = address as Address | undefined;
+    if (!me) return;
     const idNum = Number(idStr);
-    if (!Number.isFinite(idNum) || idNum < 0 || idNum > 10000) return;
+    if (!Number.isFinite(idNum) || idNum < 0 || idNum > 1000000000) return;
 
     try {
       // Ensure correct chain
       if (chainId !== MONAD_CHAIN_ID) {
-        try { await switchChain({ chainId: MONAD_CHAIN_ID }); } catch { /* ignore */ }
+        try {
+          await switchChain({ chainId: MONAD_CHAIN_ID });
+        } catch {
+          // user rejected or wallet not ready
+        }
       }
 
       setBusy(true);
@@ -71,39 +87,40 @@ export default function VaultPanel() {
         abi: ERC721_WRITE_ABI,
         address: ALLOWED_CONTRACT,
         functionName: "safeTransferFrom",
-        args: [address as Address, VAULT, BigInt(idNum)],
-        account: address as Address,
+        args: [me, VAULT, BigInt(idNum)],
+        account: me,
         chainId: MONAD_CHAIN_ID,
       });
 
-      // Optimistic: start game immediately
-      fireConfirmed(address as Address);
+      // Optimistic: start the new life immediately
+      fireConfirmed(me);
 
-      // Confirm later (repeat the event on success — harmless)
-      pc.waitForTransactionReceipt({ hash, confirmations: 0, timeout: 45_000 })
+      // Confirm later (re-fire on success — harmless)
+      pc.waitForTransactionReceipt({ hash, confirmations: 0, timeout: 60_000 })
         .then((rcpt) => {
-          if (rcpt && rcpt.status === "success") fireConfirmed(address as Address);
+          if (rcpt && rcpt.status === "success") fireConfirmed(me);
         })
-        .catch(() => { /* ignore */ })
+        .catch(() => {})
         .finally(() => setBusy(false));
 
       setIdStr("");
+      onClose?.();
     } catch {
       setBusy(false);
     }
   }
-
-  const disabled = !isConnected || VAULT === zeroAddress || busy;
 
   return (
     <div className="w-full flex items-center gap-2">
       <input
         inputMode="numeric"
         pattern="[0-9]*"
-        placeholder="NFT id (0..10000)"
+        placeholder="NFT id (0..1000000000)"
         value={idStr}
         onChange={(e) => setIdStr(e.target.value.replace(/[^0-9]/g, ""))}
-        onKeyDown={(e) => { if (e.key === "Enter" && !disabled) send(); }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !disabled && idStr.length > 0) send();
+        }}
         className="px-3 py-2 rounded-xl bg-black/30 border border-white/10 w-full"
       />
       <button
