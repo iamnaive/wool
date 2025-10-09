@@ -81,9 +81,9 @@ function AppInner() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
 
-  const [connectOpen, setConnectOpen] = useState(false);
-  const [vaultOpen, setVaultOpen] = useState(false);
-  const [forceGame, setForceGame] = useState(false);
+ useEffect(() => {
+   if (isConnected) setConnectOpen(false);
+ }, [isConnected]);
 
   const livesCount = useOptimisticLives(address);
   const activeAddr = address ?? null;
