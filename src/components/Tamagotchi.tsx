@@ -771,10 +771,11 @@ export default function Tamagotchi({
 
         (ctx as any).imageSmoothingEnabled = false;
         ctx.drawImage(av, ax, ay, aw, ah);
-
-                // Do not show "0%" while the pet is not in death UI.+        let hp = Math.round((statsRef.current.health ?? 0) * 100);
-        if (!deadUi) hp = Math.max(1, Math.min(100, hp));
-        const label = `❤️ ${hp}%`;
+        
+  let hp = Math.round((statsRef.current.health ?? 0) * 100);
+ if (!deadUi) hp = Math.max(1, Math.min(100, hp));
+ const label = `❤️ ${hp}%`;
+        
         ctx.font = "10px monospace";
         ctx.textBaseline = "top";
         const tw = ctx.measureText(label).width;
