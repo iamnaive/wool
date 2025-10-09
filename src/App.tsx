@@ -143,10 +143,15 @@ function useLives(address?: string | null) {
         );
         if (res.ok) {
           const data = (await res.json()) as { lives: number };
-          if (typeof data?.lives === "number") setLives(data.lives);
+          const n = Number(data?.lives);
+          setLives(Number.isFinite(n) && n > 0 ? n : 0);
+        } else {
+          // On backend error, do not invent lives
+          setLives(0);
         }
       } catch {
-        /* keep last value */
+        // Network error: keep as 0 to avoid false "game"
+        setLives(0);
       }
     }
     tick();
@@ -179,7 +184,7 @@ function AppInner() {
     return () => window.removeEventListener("wg:request-nft", onRequestNft as any);
   }, []);
 
-  // === Audio events (fixed name: "wg:feed") ===
+  // === Audio events (correct event name) ===
   useEffect(() => {
     const onFeed = () => audio.playEatSfx();
     const onCatStart = () => audio.playCatastrophe();
@@ -194,7 +199,7 @@ function AppInner() {
     };
   }, []);
 
-  // === Life consumption when pet dies ===
+  // === Life consumption callback ===
   const consumeLife = async () => {
     try {
       if (address) {
@@ -205,15 +210,15 @@ function AppInner() {
         });
       }
     } catch {
-      /* ignore errors; UI polls and will reflect 0 lives */
+      /* no-op */
     }
-    // Do NOT force game or reset here. Wait for real lives > 0 later.
-    // Tamagotchi will keep showing the death overlay until a new life arrives.
+    // Do not force reset or force game; wait for real lives from backend.
   };
 
-  // Gate strictly by backend lives
+  // Strict gate: only backend lives > 0 unlocks the game
+  const safeLives = Number.isFinite(livesCount) ? livesCount : 0;
   const gate: "splash" | "locked" | "game" =
-    !isConnected ? "splash" : livesCount > 0 ? "game" : "locked";
+    !isConnected ? "splash" : safeLives > 0 ? "game" : "locked";
 
   const tamagotchiKey = `wg-${String(chainId ?? MONAD_CHAIN_ID)}-${String(
     activeAddr || "none"
@@ -240,7 +245,7 @@ function AppInner() {
                 {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "—"}
               </span>
               <span className="pill">Chain: {chainId ?? "—"}</span>
-              <span className="pill">Lives: {livesCount}</span>
+              <span className="pill">Lives: {safeLives}</span>
               <button className="btn" onClick={() => setVaultOpen(true)}>
                 Send NFT
               </button>
@@ -273,7 +278,7 @@ function AppInner() {
 
       {gate === "locked" && (
         <>
-          {/* Mount game even when locked so DeathOverlay can show */}
+          {/* Keep game mounted so DeathOverlay can show */}
           <div style={{ maxWidth: 980, margin: "0 auto" }}>
             <Tamagotchi
               key={tamagotchiKey}
@@ -313,7 +318,7 @@ function AppInner() {
           <Tamagotchi
             key={tamagotchiKey}
             walletAddress={activeAddr || undefined}
-            lives={livesCount}
+            lives={safeLives}
             onLoseLife={consumeLife}
           />
         </div>
