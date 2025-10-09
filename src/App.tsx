@@ -18,7 +18,7 @@ import { defineChain } from "viem";
 // IMPORTANT: imports point to files in the same folder as App.tsx
 import Tamagotchi from "./components/Tamagotchi";
 import VaultPanel from "./components/VaultPanel";
-import MuteButton from "./audio/MuteButton";        // if your MuteButton is a named export, change to:  import { MuteButton } from "./MuteButton";
+import { MuteButton } from "./audio/MuteButton";       // if your MuteButton is a named export, change to:  import { MuteButton } from "./MuteButton";
 import AudioProvider from "./audio/AudioProvider";  // keep as default
 import "./styles.css";
 
