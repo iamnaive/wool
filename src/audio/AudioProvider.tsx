@@ -70,9 +70,9 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   /** Create audio nodes lazily (after first gesture) */
   const ensureEls = useCallback(() => {
-    if (!bgmMainRef.current) bgmMainRef.current = makeAudio(PATH_BGM_MAIN, true, 0.6);
-    if (!bgmDisRef.current) bgmDisRef.current = makeAudio(PATH_BGM_DISASTER, true, 0.6);
-    if (!sfxEatRef.current) sfxEatRef.current = makeAudio(PATH_SFX_EAT, false, 1.0);
+    if (!bgmMainRef.current) bgmMainRef.current = makeAudio(PATH_BGM_MAIN, true, 0.2);
+    if (!bgmDisRef.current) bgmDisRef.current = makeAudio(PATH_BGM_DISASTER, true, 0.1);
+    if (!sfxEatRef.current) sfxEatRef.current = makeAudio(PATH_SFX_EAT, false, 0.1);
 
     // Apply current mute to all nodes
     [bgmMainRef.current, bgmDisRef.current, sfxEatRef.current].forEach((a) => {
