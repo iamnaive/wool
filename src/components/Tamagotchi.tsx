@@ -358,31 +358,29 @@ export default function Tamagotchi({
         setAgeMs((v) => v + elapsed);
 
         if (res.died) {
-  const reason =
-    res.deathReason ||
-    (res.wasCatastrophe ? "fatal event" : res.wasSick ? "illness" : "collapse");
+          const reason =
+            res.deathReason ||
+            (res.wasCatastrophe ? "fatal event" : res.wasSick ? "illness" : "collapse");
 
-  if ((lives || 0) > 0) {
-    // spend a life immediately and hard-reset (не показываем dead-спрайт)
-    if (!lifeSpentForThisDeath) {
-      onLoseLife?.();
-      setLifeSpentForThisDeath(true);
-      try {
-        window.dispatchEvent(new CustomEvent("wg:life-spent", { detail: { reason: reason, offline: true } }));
-      } catch {}
-    }
-    // скрываем любые dead-состояния и перезапускаем игру
-    setIsDead(false);
-    setForceDeadPreview(false);
-    performReset();
-  } else {
-    // жизней нет — показываем смерть и оверлей
-    setIsDead(true);
-    setDeathReason(reason);
-    try { window.dispatchEvent(new CustomEvent("wg:pet-dead")); } catch {}
-  }
-}
-
+          if ((lives || 0) > 0) {
+            // spend life immediately and reset state without showing dead sprite persistently
+            if (!lifeSpentForThisDeath) {
+              onLoseLife?.();
+              setLifeSpentForThisDeath(true);
+              try {
+                window.dispatchEvent(new CustomEvent("wg:life-spent", { detail: { reason, offline: true } }));
+              } catch {}
+            }
+            setIsDead(false);
+            setForceDeadPreview(false);
+            performReset();
+          } else {
+            // no lives -> show death screen and reason
+            setIsDead(true);
+            setDeathReason(reason);
+            try { window.dispatchEvent(new CustomEvent("wg:pet-dead")); } catch {}
+          }
+        }
 
         if (res.newConsumed.length) {
           const uniq = Array.from(new Set([...consumed, ...res.newConsumed])).sort((a, b) => a - b);
@@ -516,7 +514,7 @@ export default function Tamagotchi({
     },
   };
 
-  /** Reset (used only after new life confirmed) */
+  /** Reset (used only after new life confirmed or explicit user action) */
   const performReset = () => {
     try {
       localStorage.removeItem(sk(START_TS_KEY));
@@ -554,36 +552,25 @@ export default function Tamagotchi({
     window.dispatchEvent(new CustomEvent("wg:new-game"));
   };
 
-  /** Spend life once on death */
- useEffect(() => {
-  if (isDead && !lifeSpentForThisDeath) {
-    onLoseLife?.();
-
-    // Сигнал родителю/глобали: «списать жизнь»
-    try { window.dispatchEvent(new CustomEvent("wg:lose-life")); } catch {}
-
-    setLifeSpentForThisDeath(true);
-    window.dispatchEvent(new CustomEvent("wg:pet-dead"));
-  }
-}, [isDead]); // eslint-disable-line react-hooks/exhaustive-deps
-
-/** If dead but there are lives > 0, spend & hard-reset immediately (no dead sprite flash) */
-useEffect(() => {
-  if (isDead && (lives || 0) > 0) {
-    if (!lifeSpentForThisDeath) {
+  /** Spend life once on death (single-shot) */
+  useEffect(() => {
+    if (isDead && !lifeSpentForThisDeath) {
       onLoseLife?.();
+      try { window.dispatchEvent(new CustomEvent("wg:lose-life")); } catch {}
       setLifeSpentForThisDeath(true);
-      try { window.dispatchEvent(new CustomEvent("wg:pet-dead")); } catch {}
+      window.dispatchEvent(new CustomEvent("wg:pet-dead"));
     }
-    // hide any dead states and restart game right away
-    setIsDead(false);
-    setForceDeadPreview(false);
-    performReset();  // your existing full reset
-  }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [isDead, lives]);
+  }, [isDead]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** When new life confirmed → reset */
+  /** We intentionally do NOT auto-reset when lives > 0.
+   *  Life is decremented by the effect above.
+   *  Player should see the death overlay and choose:
+   *  - "Start new life" (performReset), or
+   *  - "Send 1 NFT → +1 life".
+   */
+  // (auto-reset effect removed)
+
+  /** When new life confirmed → reset (and clear any preview) */
   useEffect(() => {
     const onConfirmed = () => {
       if (deadRef.current || forceDeadPreviewRef.current) {
@@ -978,28 +965,60 @@ useEffect(() => {
   /** Clipboard helper */
   const copyAddr = async () => { try { await navigator.clipboard.writeText(NFT_CONTRACT); } catch {} };
 
-  // render-time flags for overlay
+  // render-time flags and death overlay
   const deadNow = isDead || forceDeadPreview;
-  const showDeathOverlay = (lives || 0) <= 0 && deadNow;
+  const showDeathOverlay = deadNow;
 
   const DeathOverlay = showDeathOverlay ? (
     <OverlayCard>
       <div style={{ fontSize: 18, marginBottom: 6 }}>Your pet has died</div>
       {deathReason && <div className="muted" style={{ marginBottom: 12 }}>Cause: {deathReason}</div>}
-      <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-        <button
-          className="btn btn-primary"
-          onClick={() => {
-            window.dispatchEvent(
-              new CustomEvent("wg:request-nft", {
-                detail: { to: NFT_CONTRACT, address: walletAddress }
-              })
-            );
-          }}
-        >
-          Send 1 NFT → +1 life
-        </button>
-      </div>
+
+      {(lives || 0) > 0 ? (
+        <>
+          <div className="muted" style={{ marginBottom: 10 }}>
+            Lives left: <b>{lives}</b>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                // life has already been decremented by effect; just restart the run
+                performReset();
+              }}
+            >
+              Start new life
+            </button>
+            <button
+              className="btn"
+              onClick={() => {
+                window.dispatchEvent(
+                  new CustomEvent("wg:request-nft", {
+                    detail: { to: NFT_CONTRACT, address: walletAddress }
+                  })
+                );
+              }}
+            >
+              Send 1 NFT → +1 life
+            </button>
+          </div>
+        </>
+      ) : (
+        <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              window.dispatchEvent(
+                new CustomEvent("wg:request-nft", {
+                  detail: { to: NFT_CONTRACT, address: walletAddress }
+                })
+              );
+            }}
+          >
+            Send 1 NFT → +1 life
+          </button>
+        </div>
+      )}
     </OverlayCard>
   ) : null;
 
@@ -1191,6 +1210,7 @@ function simulateOffline(args: {
       if (s.hunger <= 0 || s.health <= 0) {
         died = true;
         wasCatastrophe = catastropheActive;
+        wasSickAtDeath = sick;
         deathReason =
           s.hunger <= 0 ? "starvation"
           : catastropheActive ? "fatal event"
