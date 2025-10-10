@@ -130,7 +130,7 @@ function AppInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeAddr]);
 
-  // open/confirm listeners (+ NEW explicit "wg:open-game")
+  // open/confirm listeners (+ explicit "wg:open-game")
   useEffect(() => {
     const onRequestNft = () => setIsVaultOpen(true);
 
@@ -154,14 +154,28 @@ function AppInner() {
 
     window.addEventListener("wg:request-nft", onRequestNft as any);
     window.addEventListener("wg:nft-confirmed", onConfirmed as any);
-    window.addEventListener("wg:open-game", onOpenGame as any); // NEW
+    window.addEventListener("wg:open-game", onOpenGame as any);
 
     return () => {
       window.removeEventListener("wg:request-nft", onRequestNft as any);
       window.removeEventListener("wg:nft-confirmed", onConfirmed as any);
-      window.removeEventListener("wg:open-game", onOpenGame as any); // NEW
+      window.removeEventListener("wg:open-game", onOpenGame as any);
     };
   }, [activeAddr]);
+
+  // --- toast for "life spent" (offline or online)
+  const [lifeToast, setLifeToast] = useState<string | null>(null);
+  useEffect(() => {
+    function onLifeSpent(e: any) {
+      const reason = e?.detail?.reason ? String(e.detail.reason) : "unknown";
+      const offline = e?.detail?.offline ? "offline" : "online";
+      setLifeToast(`Life spent (${offline}): ${reason}`);
+      const t = setTimeout(() => setLifeToast(null), 3500);
+      return () => clearTimeout(t);
+    }
+    window.addEventListener("wg:life-spent", onLifeSpent as any);
+    return () => window.removeEventListener("wg:life-spent", onLifeSpent as any);
+  }, []);
 
   const gate: "splash" | "locked" | "game" =
     !isConnected ? "splash" : (forceGame || livesCount > 0) ? "game" : "locked";
@@ -226,6 +240,28 @@ function AppInner() {
             <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>Send 1 NFT → +1 life</div>
             <VaultPanel />
           </div>
+        </div>
+      )}
+
+      {/* transient toast about life spending */}
+      {lifeToast && (
+        <div
+          style={{
+            position: "fixed",
+            left: "50%",
+            bottom: 24,
+            transform: "translateX(-50%)",
+            background: "rgba(0,0,0,0.75)",
+            color: "#fff",
+            padding: "10px 14px",
+            borderRadius: 10,
+            border: "1px solid rgba(255,255,255,0.15)",
+            zIndex: 9999,
+            pointerEvents: "none",
+            fontSize: 13,
+          }}
+        >
+          {lifeToast}
         </div>
       )}
 
