@@ -1,4 +1,5 @@
 // src/App.tsx
+// English-only comments.
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useAccount, useConnect, useDisconnect, useChainId } from "wagmi";
@@ -10,7 +11,7 @@ import MuteButton from "./audio/MuteButton";
 import Tamagotchi from "./components/Tamagotchi";
 import VaultPanel from "./components/VaultPanel";
 
-// WOOL (added, non-invasive)
+// WOOL (non-invasive)
 import { WoolProvider } from "./wool/WoolProvider";
 import WoolHUD from "./wool/WoolHUD";
 
@@ -70,7 +71,7 @@ function TopBar({ onOpenVault, onOpenConnect }: { onOpenVault: () => void; onOpe
           <>
             <div className="pill">❤️ Lives: <b>{lives}</b></div>
             <div className="pill">{MONAD.name} • chain {chainId}</div>
-            <div className="pill">{address?.slice(0, 6)}…{address?.slice(-4)}</div>
+            <div className="pill">{`${address?.slice(0, 6)}…${address?.slice(-4)}`}</div>
             <button className="btn" onClick={onOpenVault} title="Send 1 NFT → +1 life">Get life</button>
             <button className="btn btn-ghost" onClick={() => disconnect()}>Disconnect</button>
             <MuteButton />
@@ -180,6 +181,7 @@ function AppInner() {
     return () => window.removeEventListener("wg:life-spent", onLifeSpent as any);
   }, []);
 
+  // Gate state still computed (for overlays), but the game mounts regardless
   const gate: "splash" | "locked" | "game" =
     !isConnected ? "splash" : (forceGame || livesCount > 0) ? "game" : "locked";
 
@@ -189,53 +191,65 @@ function AppInner() {
     <div className="wrap">
       <TopBar onOpenVault={() => setIsVaultOpen(true)} onOpenConnect={() => setIsConnectOpen(true)} />
 
-      {gate === "splash" && (
-        <section className="card splash">
-          <div className="splash-inner">
-            <div className="splash-title">Wooligotchi</div>
-            <div className="muted">Send 1 NFT → get 1 life (to the Vault)</div>
-            <button className="btn btn-primary btn-lg" onClick={() => setIsConnectOpen(true)}>Connect Wallet</button>
+      {/* GAME AREA mounts ALWAYS */}
+      <div style={{ maxWidth: 980, margin: "0 auto", position: "relative" }}>
+        <Tamagotchi
+          key={tamaKey}
+          walletAddress={activeAddr || undefined}
+          currentForm={"egg" as any}
+          lives={livesCount}
+          onLoseLife={handleLoseLife}
+        />
+
+        {/* Overlays that do NOT unmount the game */}
+        {gate !== "game" && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "grid",
+              placeItems: "center",
+              background: "rgba(0,0,0,0.45)",
+              zIndex: 10,
+            }}
+          >
+            {gate === "splash" ? (
+              <section className="card splash" style={{ maxWidth: 640 }}>
+                <div className="splash-inner">
+                  <div className="splash-title">Wooligotchi</div>
+                  <div className="muted">Send 1 NFT → get 1 life (to the Vault)</div>
+                  <button className="btn btn-primary btn-lg" onClick={() => setIsConnectOpen(true)}>
+                    Connect Wallet
+                  </button>
+                </div>
+              </section>
+            ) : (
+              <section className="card splash" style={{ maxWidth: 640 }}>
+                <div className="splash-inner">
+                  <div className="splash-title" style={{ marginBottom: 8 }}>No lives on this wallet</div>
+                  <div className="muted" style={{ marginBottom: 16, textAlign: "center" }}>
+                    Send 1 NFT to the Vault to start. If another wallet has a life, switch to it.
+                  </div>
+                  <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+                    {!isConnected ? (
+                      <button className="btn btn-primary btn-lg" onClick={() => setIsConnectOpen(true)}>
+                        Connect Wallet
+                      </button>
+                    ) : (
+                      <button className="btn btn-primary btn-lg" onClick={() => setIsVaultOpen(true)}>
+                        Send NFT (+1 life)
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </section>
+            )}
           </div>
-        </section>
-      )}
+        )}
+      </div>
 
-      {gate === "locked" && (
-        <section className="card splash" style={{ maxWidth: 640, margin: "24px auto" }}>
-          <div className="splash-inner">
-            <div className="splash-title" style={{ marginBottom: 8 }}>No lives on this wallet</div>
-            <div className="muted" style={{ marginBottom: 16, textAlign: "center" }}>
-              Send 1 NFT to the Vault to start. If another wallet has a life, switch to it.
-            </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-              {!isConnected ? (
-                <button className="btn btn-primary btn-lg" onClick={() => setIsConnectOpen(true)}>
-                  Connect Wallet
-                </button>
-              ) : (
-                <button className="btn btn-primary btn-lg" onClick={() => setIsVaultOpen(true)}>
-                  Send NFT (+1 life)
-                </button>
-              )}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {gate === "game" && (
-        <div style={{ maxWidth: 980, margin: "0 auto" }}>
-          <Tamagotchi
-            key={tamaKey}
-            walletAddress={activeAddr || undefined}
-            currentForm={"egg" as any}
-            lives={livesCount}
-            onLoseLife={handleLoseLife}
-          />
-        </div>
-      )}
-
-      {isConnectOpen && (
-        <ConnectModal onClose={() => setIsConnectOpen(false)} />
-      )}
+      {/* Modals */}
+      {isConnectOpen && <ConnectModal onClose={() => setIsConnectOpen(false)} />}
 
       {isVaultOpen && (
         <div onClick={() => setIsVaultOpen(false)} className="modal">
@@ -376,7 +390,6 @@ function WalletButtons({ onDone }: { onDone?: () => void }) {
 export default function App() {
   return (
     <AudioProvider>
-      {/* WOOL provider wraps the game non-invasively */}
       <WoolProvider>
         <AppInner />
       </WoolProvider>
