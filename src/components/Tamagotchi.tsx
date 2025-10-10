@@ -358,10 +358,31 @@ export default function Tamagotchi({
         setAgeMs((v) => v + elapsed);
 
         if (res.died) {
-          setIsDead(true);
-          setDeathReason(res.deathReason || (res.wasCatastrophe ? "fatal event" : res.wasSick ? "illness" : "collapse"));
-          window.dispatchEvent(new CustomEvent("wg:pet-dead"));
-        }
+  const reason =
+    res.deathReason ||
+    (res.wasCatastrophe ? "fatal event" : res.wasSick ? "illness" : "collapse");
+
+  if ((lives || 0) > 0) {
+    // spend a life immediately and hard-reset (не показываем dead-спрайт)
+    if (!lifeSpentForThisDeath) {
+      onLoseLife?.();
+      setLifeSpentForThisDeath(true);
+      try {
+        window.dispatchEvent(new CustomEvent("wg:life-spent", { detail: { reason: reason, offline: true } }));
+      } catch {}
+    }
+    // скрываем любые dead-состояния и перезапускаем игру
+    setIsDead(false);
+    setForceDeadPreview(false);
+    performReset();
+  } else {
+    // жизней нет — показываем смерть и оверлей
+    setIsDead(true);
+    setDeathReason(reason);
+    try { window.dispatchEvent(new CustomEvent("wg:pet-dead")); } catch {}
+  }
+}
+
 
         if (res.newConsumed.length) {
           const uniq = Array.from(new Set([...consumed, ...res.newConsumed])).sort((a, b) => a - b);
