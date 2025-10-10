@@ -546,6 +546,21 @@ export default function Tamagotchi({
   }
 }, [isDead]); // eslint-disable-line react-hooks/exhaustive-deps
 
+/** If dead but there are lives > 0, spend & hard-reset immediately (no dead sprite flash) */
+useEffect(() => {
+  if (isDead && (lives || 0) > 0) {
+    if (!lifeSpentForThisDeath) {
+      onLoseLife?.();
+      setLifeSpentForThisDeath(true);
+      try { window.dispatchEvent(new CustomEvent("wg:pet-dead")); } catch {}
+    }
+    // hide any dead states and restart game right away
+    setIsDead(false);
+    setForceDeadPreview(false);
+    performReset();  // your existing full reset
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [isDead, lives]);
 
   /** When new life confirmed → reset */
   useEffect(() => {
