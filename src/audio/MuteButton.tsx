@@ -1,32 +1,22 @@
 // src/audio/MuteButton.tsx
-// Simple mute toggle. English-only comments.
+// Small mute/unmute toggle button using AudioProvider state.
+// Visuals match the provided sample: "btn btn--mute", emoji icon, opacity when not armed.
 
 import React from "react";
 import { useAudio } from "./AudioProvider";
 
-type Props = {
-  className?: string;
-  titleWhenOn?: string;
-  titleWhenMuted?: string;
-};
+export default function MuteButton() {
+  const { muted, toggleMute, isArmed } = useAudio();
+  const armed = isArmed;
 
-const MuteButton: React.FC<Props> = ({
-  className,
-  titleWhenOn = "Sound: On",
-  titleWhenMuted = "Sound: Muted",
-}) => {
-  const { muted, toggleMute } = useAudio();
   return (
     <button
       title={armed ? (muted ? "Unmute" : "Mute") : "Tap to enable audio"}
-      onClick={() => setMuted(!muted)}
+      onClick={toggleMute}
       className="btn btn--mute"
       style={{ opacity: armed ? 1 : 0.8 }}
     >
       {muted ? "🔇" : "🔊"}
     </button>
-
   );
-};
-
-export default MuteButton;
+}
