@@ -13,9 +13,15 @@ import VaultPanel from "./components/VaultPanel";
 
 /* ---------- small helpers ---------- */
 const ls = {
-  get: (k: string) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } },
-  set: (k: string, v: any) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  get: (k: string) => {
+    try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; }
+    catch { return null; }
+  },
+  set: (k: string, v: any) => {
+    try { localStorage.setItem(k, JSON.stringify(v)); } catch {}
+  },
 };
+
 const CHAIN_ID = MONAD.id;
 const PENDING_LIFE_KEY = "wg_pending_life";
 const LIVES_KEY = "wg_lives_v1";
@@ -86,12 +92,10 @@ function AppInner() {
   const [isVaultOpen, setIsVaultOpen] = useState(false);
   const [forceGame, setForceGame] = useState(false);
 
-  // keep original hook (do not delete)
   const livesCount = useOptimisticLives(address);
-
   const activeAddr = address ?? null;
 
-  // helper to write lives
+  // helper to write lives (kept for completeness)
   const writeLives = (addr: string | null | undefined, value: number) => {
     const a = (addr || "").toLowerCase();
     if (!a) return;
@@ -103,33 +107,22 @@ function AppInner() {
     } catch {}
   };
 
-  // local lives state to immediately reflect changes in UI/gate
-  const readLives = (addr?: string | null) => {
-    const a = (addr || "").toLowerCase();
-    if (!a) return 0;
-    try {
-      const raw = localStorage.getItem(LIVES_KEY);
-      const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
-      return Math.max(0, Number(map[`${CHAIN_ID}:${a}`] || 0));
-    } catch {
-      return 0;
-    }
-  };
-  const [lives, setLives] = useState<number>(() => readLives(address));
-  useEffect(() => { setLives(readLives(address)); }, [address]);
-
-  // decrement once on death from child
+  // decrement once on death (called by Tamagotchi via prop)
   const handleLoseLife = () => {
     const a = (activeAddr || "").toLowerCase();
     if (!a) return;
-    const cur = readLives(activeAddr);
-    const next = Math.max(0, cur - 1);
-    writeLives(activeAddr, next);
-    setLives(next);       // reflect immediately
+    try {
+      const raw = localStorage.getItem(LIVES_KEY);
+      const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+      const key = `${CHAIN_ID}:${a}`;
+      const next = Math.max(0, (map[key] ?? 0) - 1);
+      map[key] = next;
+      localStorage.setItem(LIVES_KEY, JSON.stringify(map));
+    } catch {}
     setForceGame(false);
   };
 
-  // hear global "lose-life" just in case (duplicate safety)
+  // safety listener if someone else emits a lose signal
   useEffect(() => {
     const onLose = () => handleLoseLife();
     window.addEventListener("wg:lose-life", onLose as any);
@@ -137,29 +130,41 @@ function AppInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeAddr]);
 
+  // open/confirm listeners (+ NEW explicit "wg:open-game")
   useEffect(() => {
     const onRequestNft = () => setIsVaultOpen(true);
+
     const onConfirmed = () => {
       if (activeAddr) {
         ls.set(PENDING_LIFE_KEY, activeAddr);
-        const cur = readLives(activeAddr);
-        const next = cur + 1;
-        writeLives(activeAddr, next);
-        setLives(next); // reflect immediately
+        const key = `${CHAIN_ID}:${activeAddr.toLowerCase()}`;
+        const raw = localStorage.getItem(LIVES_KEY);
+        const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+        map[key] = (map[key] ?? 0) + 1;
+        localStorage.setItem(LIVES_KEY, JSON.stringify(map));
       }
       setIsVaultOpen(false);
       setForceGame(true);
     };
+
+    const onOpenGame = () => {
+      setIsVaultOpen(false);
+      setForceGame(true);
+    };
+
     window.addEventListener("wg:request-nft", onRequestNft as any);
     window.addEventListener("wg:nft-confirmed", onConfirmed as any);
+    window.addEventListener("wg:open-game", onOpenGame as any); // NEW
+
     return () => {
       window.removeEventListener("wg:request-nft", onRequestNft as any);
       window.removeEventListener("wg:nft-confirmed", onConfirmed as any);
+      window.removeEventListener("wg:open-game", onOpenGame as any); // NEW
     };
   }, [activeAddr]);
 
   const gate: "splash" | "locked" | "game" =
-    !isConnected ? "splash" : (forceGame || lives > 0) ? "game" : "locked";
+    !isConnected ? "splash" : (forceGame || livesCount > 0) ? "game" : "locked";
 
   const tamaKey = `wg-${String(chainId ?? CHAIN_ID)}-${String(activeAddr || "none")}`;
 
@@ -205,8 +210,8 @@ function AppInner() {
             key={tamaKey}
             walletAddress={activeAddr || undefined}
             currentForm={"egg" as any}
-            lives={lives}                 // use live state
-            onLoseLife={handleLoseLife}   // decrement exactly once
+            lives={livesCount}
+            onLoseLife={handleLoseLife}
           />
         </div>
       )}
@@ -249,6 +254,7 @@ function WalletButtons({ onDone }: { onDone?: () => void }) {
       !!(window as any).ethereum?.isMetaMask ||
       (Array.isArray((window as any).ethereum?.providers) &&
         (window as any).ethereum.providers.some((p: any) => p?.isMetaMask));
+
     const items = connectors.map((c) => {
       const opts: any = (c as any).options ?? {};
       let label = c.name;
