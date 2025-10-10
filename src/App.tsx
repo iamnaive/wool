@@ -1,5 +1,4 @@
 // src/App.tsx
-// English-only comments.
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useAccount, useConnect, useDisconnect, useChainId } from "wagmi";
