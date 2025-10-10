@@ -3,7 +3,8 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useAccount, useConnect, useDisconnect, useChainId } from "wagmi";
-
+import { WoolProvider } from "./wool/WoolProvider";
+import WoolHUD from "./wool/WoolHUD";
 import { MONAD } from "./utils/wagmiConfigLike";
 import { AudioProvider } from "./audio/AudioProvider";
 import MuteButton from "./audio/MuteButton";
@@ -370,7 +371,10 @@ function WalletButtons({ onDone }: { onDone?: () => void }) {
 export default function App() {
   return (
     <AudioProvider>
-      <AppInner />
+      <WoolProvider>
+        {/* ...твой текущий UI/игра... */}
+        <WoolHUD />
+      </WoolProvider>
     </AudioProvider>
   );
 }
