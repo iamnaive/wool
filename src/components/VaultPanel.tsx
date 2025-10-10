@@ -1,20 +1,25 @@
 'use client';
 
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import type { Address } from "viem";
 import { zeroAddress } from "viem";
-import { useAccount, useSwitchChain, useConfig, useChainId } from "wagmi";
+import { useAccount, useSwitchChain } from "wagmi";
 import { writeContract, getPublicClient } from "wagmi/actions";
+import { config as wagmiConfig, MONAD } from "../utils/wagmiConfigLike";
 
 /**
- * VaultPanel (ERC-721, optimistic confirm)
- * - Single numeric tokenId input + Send.
- * - Calls safeTransferFrom(owner -> VAULT) on ALLOWED_CONTRACT.
- * - Fires "wg:nft-confirmed" optimistically after tx hash and again on receipt.
- * - Shows clear error states and disables button when invalid.
+ * VaultPanel (one-line, ERC-721 only, optimistic confirm)
+ * - Single numeric input for tokenId + Send button.
+ * - Transfers ERC-721 via safeTransferFrom(owner -> VAULT).
+ * - Emits "wg:nft-confirmed" optimistically and again on receipt success.
+ * - Also emits "wg:open-game" so the app can immediately switch to the game.
+ *
+ * ENV required (via wagmiConfigLike):
+ *  - chain id inside MONAD.id
+ *  - VITE_VAULT_ADDRESS
  */
 
-const MONAD_CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID ?? 10143);
+const MONAD_CHAIN_ID = MONAD.id;
 const VAULT = (import.meta.env.VITE_VAULT_ADDRESS as Address) ?? zeroAddress;
 const ALLOWED_CONTRACT: Address = "0x88c78d5852f45935324c6d100052958f694e8446";
 
@@ -32,64 +37,40 @@ const ERC721_WRITE_ABI = [
   },
 ] as const;
 
-export default function VaultPanel() {
-  const { address, isConnected } = useAccount();
-  const activeChainId = useChainId();
-  const { switchChain, isPending: isSwitching } = useSwitchChain();
-  const wagmiConfig = useConfig();
-  const pc = useMemo(() => getPublicClient(wagmiConfig), [wagmiConfig]);
+export default function VaultPanel({ onClose }: { onClose?: () => void }) {
+  const { address, isConnected, chainId } = useAccount();
+  const { switchChain } = useSwitchChain();
+  const pc = getPublicClient(wagmiConfig);
 
   const [idStr, setIdStr] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const parsedId = useMemo(() => {
-    if (!idStr) return null;
-    if (!/^\d+$/.test(idStr)) return null;
-    const n = Number(idStr);
-    if (!Number.isFinite(n) || n < 0) return null;
-    return BigInt(n);
-  }, [idStr]);
-
-  const isRightChain = activeChainId === MONAD_CHAIN_ID;
-  const vaultOk = VAULT && VAULT !== zeroAddress;
-
-  const disabled =
-    !isConnected ||
-    busy ||
-    isSwitching ||
-    !vaultOk ||
-    !parsedId ||
-    (isConnected && !isRightChain);
-
   function fireConfirmed(addr: Address | undefined) {
-    try {
-      window.dispatchEvent(new CustomEvent("wg:nft-confirmed", { detail: { address: addr } }));
-    } catch {}
+    window.dispatchEvent(new CustomEvent("wg:nft-confirmed", { detail: { address: addr } }));
   }
 
   async function send() {
-    setMsg(null);
-    if (!isConnected || !address) {
-      setMsg("Connect a wallet first.");
+    if (!isConnected || !address || VAULT === zeroAddress) {
+      setMsg("Connect wallet or configure VAULT.");
       return;
     }
-    if (!vaultOk) {
-      setMsg("Vault address is not set. Check VITE_VAULT_ADDRESS.");
+    const idNum = Number(idStr);
+    if (!Number.isFinite(idNum) || idNum < 0) {
+      setMsg("Enter a valid token id.");
       return;
     }
-    if (!parsedId) {
-      setMsg("Enter a valid NFT id (integer).");
-      return;
-    }
+    const parsedId = BigInt(idNum);
 
     try {
       // ensure correct chain
-      if (!isRightChain) {
-        await switchChain({ chainId: MONAD_CHAIN_ID });
+      if (chainId !== MONAD_CHAIN_ID) {
+        try { await switchChain({ chainId: MONAD_CHAIN_ID }); }
+        catch { setMsg(`Switch to chain ${MONAD_CHAIN_ID} failed.`); return; }
       }
 
       setBusy(true);
+      setMsg("Sending…");
 
       const { hash } = await writeContract(wagmiConfig, {
         abi: ERC721_WRITE_ABI,
@@ -100,80 +81,58 @@ export default function VaultPanel() {
         chainId: MONAD_CHAIN_ID,
       });
 
-      // optimistic life grant (App listens to this)
+      // optimistic signals (start game immediately, close modal if app listens)
       fireConfirmed(address as Address);
-      setMsg(`Tx sent: ${hash.slice(0, 10)}…`);
+      window.dispatchEvent(new Event("wg:open-game"));
 
-      // confirm later; repeat event on success (harmless)
-      pc.waitForTransactionReceipt({ hash, confirmations: 0, timeout: 60_000 })
+      setMsg(`Tx sent: ${hash.slice(0, 10)}…`);
+      setIdStr("");
+
+      // repeat on confirmation (harmless duplication)
+      pc.waitForTransactionReceipt({ hash, confirmations: 0, timeout: 45_000 })
         .then((rcpt) => {
-          if (rcpt?.status === "success") {
+          if (rcpt && rcpt.status === "success") {
             fireConfirmed(address as Address);
+            window.dispatchEvent(new Event("wg:open-game"));
             setMsg("Transfer confirmed ✅");
+            onClose?.();
           } else {
             setMsg("Transaction failed.");
           }
         })
-        .catch((e) => {
-          console.error("waitForTransactionReceipt error:", e);
-          setMsg("Could not confirm the transaction (timeout).");
-        })
+        .catch(() => setMsg("Receipt wait timed out."))
         .finally(() => setBusy(false));
-
-      setIdStr("");
     } catch (e: any) {
-      console.error("send error:", e);
       setBusy(false);
-      const reason =
-        e?.shortMessage || e?.message || "Failed to send transaction.";
-      setMsg(reason);
+      setMsg(e?.shortMessage || e?.message || "Transaction failed.");
     }
   }
 
-  return (
-    <div className="w-full" style={{ display: "grid", gap: 8 }}>
-      {/* quick status */}
-      <div className="muted" style={{ fontSize: 12 }}>
-        Chain: <b>{String(activeChainId)}</b> {isRightChain ? "✅" : "❌"} • Vault:{" "}
-        <b>{vaultOk ? VAULT : "NOT SET"}</b>
-      </div>
+  const disabled = !isConnected || VAULT === zeroAddress || busy;
 
+  return (
+    <div className="w-full flex flex-col gap-2">
       <div className="w-full flex items-center gap-2">
         <input
           inputMode="numeric"
           pattern="[0-9]*"
-          placeholder="NFT id (0..1000000)"
+          placeholder="NFT id (e.g. 0..10000)"
           value={idStr}
           onChange={(e) => setIdStr(e.target.value.replace(/[^0-9]/g, ""))}
-          onKeyDown={(e) => { if (e.key === "Enter" && !disabled) send(); }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !disabled && idStr) send(); }}
           className="px-3 py-2 rounded-xl bg-black/30 border border-white/10 w-full"
         />
-        {!isRightChain ? (
-          <button
-            onClick={() => switchChain({ chainId: MONAD_CHAIN_ID })}
-            className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 disabled:opacity-50"
-            disabled={busy || isSwitching}
-            title="Switch to target chain"
-          >
-            Switch
-          </button>
-        ) : (
-          <button
-            disabled={disabled}
-            onClick={send}
-            className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 disabled:opacity-50"
-            title="Send 1 NFT → get 1 life"
-          >
-            Send
-          </button>
-        )}
+        <button
+          disabled={disabled || idStr.length === 0}
+          onClick={send}
+          className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 disabled:opacity-50"
+          title="Send 1 NFT → get 1 life"
+        >
+          Send
+        </button>
       </div>
 
-      {msg && (
-        <div className="muted" style={{ fontSize: 12 }}>
-          {msg}
-        </div>
-      )}
+      {msg && <div className="muted" style={{ fontSize: 12 }}>{msg}</div>}
     </div>
   );
 }
