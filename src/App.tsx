@@ -3,14 +3,17 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useAccount, useConnect, useDisconnect, useChainId } from "wagmi";
-import { WoolProvider } from "./wool/WoolProvider";
-import WoolHUD from "./wool/WoolHUD";
+
 import { MONAD } from "./utils/wagmiConfigLike";
 import { AudioProvider } from "./audio/AudioProvider";
 import MuteButton from "./audio/MuteButton";
 
 import Tamagotchi from "./components/Tamagotchi";
 import VaultPanel from "./components/VaultPanel";
+
+// WOOL (added, non-invasive)
+import { WoolProvider } from "./wool/WoolProvider";
+import WoolHUD from "./wool/WoolHUD";
 
 /* ---------- small helpers ---------- */
 const ls = {
@@ -267,6 +270,9 @@ function AppInner() {
       )}
 
       <footer className="footer"><div className="muted">Monad testnet mini-app • Wooligotchi</div></footer>
+
+      {/* WOOL HUD (non-invasive overlay) */}
+      <WoolHUD />
     </div>
   );
 }
@@ -371,9 +377,9 @@ function WalletButtons({ onDone }: { onDone?: () => void }) {
 export default function App() {
   return (
     <AudioProvider>
+      {/* WOOL provider wraps the game non-invasively */}
       <WoolProvider>
-        {/* ...твой текущий UI/игра... */}
-        <WoolHUD />
+        <AppInner />
       </WoolProvider>
     </AudioProvider>
   );
