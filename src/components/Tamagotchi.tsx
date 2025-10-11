@@ -923,7 +923,7 @@ export default function Tamagotchi({
       const maxX = LOGICAL_W - drawW;
 
       // walking & frame selection
-      let xNext = x + (dir * WALK_SPEED * (Math.min(100, ts - last))) / 1000;
+      let xNext = x + (dir * WALK_SPEED * dt) / 1000;
       const inTurnCooldown = (ts - lastTurnAt) < TURN_COOLDOWN;
 
       if (!deadUi && !sleepingNow) {
@@ -940,7 +940,7 @@ export default function Tamagotchi({
         }
       }
 
-      frameTimer += Math.min(100, ts - last + 0); // keep advancing frames
+      frameTimer += dt; // keep advancing frames
       if (frameTimer > 1e6) frameTimer %= 1e6;
       let frameIndex = 0;
       if (frames.length >= 2) {
@@ -982,7 +982,7 @@ export default function Tamagotchi({
         const scoopImg = images[SCOOP_SRC];
         const scoopH = SCOOP_HEIGHT_TARGET;
         const scoopW = scoopImg ? Math.round((scoopImg.width / scoopImg.height) * scoopH) : 28;
-        st.x -= (SCOOP_SPEED_PX_S * Math.min(100, ts - last + 0)) / 1000;
+        st.x -= (SCOOP_SPEED_PX_S * dt) / 1000;
         const sy = Math.round(LOGICAL_H - BASE_GROUND - scoopH + EXTRA_DOWN);
         if (scoopImg) ctx.drawImage(scoopImg, Math.round(st.x), sy, scoopW, scoopH);
         else { ctx.font = "14px monospace"; ctx.fillText("🧹", Math.round(st.x), sy); }
