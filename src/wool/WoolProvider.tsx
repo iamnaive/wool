@@ -21,7 +21,7 @@
 //
 // Storage keys:
 //  - wg_wool_v1::<address>   -> { total:number, days: { ymd:string -> { collected:number } } }
-
+import { apiCollect } from "./woolApi";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useAccount, usePublicClient } from "wagmi";
 
@@ -148,38 +148,60 @@ export const WoolProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Main collect handler
   const collectOne = useCallback(async (): Promise<boolean> => {
-    if (!enabled) return false;
-    if (collectingRef.current) return false; // debounce
-    collectingRef.current = true;
+  if (!enabled) return false;
+  if (collectingRef.current) return false; // debounce
+  collectingRef.current = true;
 
-    try {
-      // Resolve current day (chain time if available)
-      const now = await getChainNow(publicClient);
-      const dayKey = ymdFromDate(now);
+  try {
+    // Resolve current day (chain time if available)
+    const now = await getChainNow(publicClient);
+    const dayKey = ymdFromDate(now);
 
-      // Rotate day if needed
-      if (dayKey !== ymd) setYmd(dayKey);
+    if (dayKey !== ymd) setYmd(dayKey);
 
-      // Read current ledger
-      const current = loadLedger(address);
-      const dayEntry = current.days[dayKey] || { collected: 0 };
+    // Local optimistic update
+    const current = loadLedger(address);
+    const dayEntry = current.days[dayKey] || { collected: 0 };
 
-      // Enforce cap
-      if (dayEntry.collected >= DAILY_CAP) return false;
+    if (dayEntry.collected >= DAILY_CAP) return false;
 
-      // Atomic-ish update
-      dayEntry.collected += 1;
+    dayEntry.collected += 1;
+    current.days[dayKey] = dayEntry;
+    current.total = (current.total || 0) + 1;
+
+    saveLedger(address, current);
+    setLedger({ ...current });
+
+    // Server authoritative update
+    const chId = Number((publicClient as any)?.chain?.id ?? 0);
+    const server = await apiCollect(address as `0x${string}`, chId).catch(() => null);
+
+    if (!server || !server.ok) {
+      // rollback if server rejected
+      dayEntry.collected -= 1;
       current.days[dayKey] = dayEntry;
-      current.total = (current.total || 0) + 1;
-
+      current.total = Math.max(0, (current.total || 0) - 1);
       saveLedger(address, current);
-      setLedger(current);
-      return true;
-    } finally {
-      // small delay to avoid ultra-fast double taps
-      setTimeout(() => { collectingRef.current = false; }, 200);
+      setLedger({ ...current });
+      return false;
     }
-  }, [address, enabled, publicClient, ymd]);
+
+    // Align local state to server response
+    const srvDay = server.ymd || dayKey;
+    const synced = loadLedger(address);
+    const sEntry = synced.days[srvDay] || { collected: 0 };
+    sEntry.collected = Math.max(sEntry.collected, server.dayCount ?? sEntry.collected);
+    synced.days[srvDay] = sEntry;
+    synced.total = Math.max(synced.total || 0, server.total ?? 0);
+    saveLedger(address, synced);
+    setLedger({ ...synced });
+
+    return !(server.capped === true);
+  } finally {
+    setTimeout(() => { collectingRef.current = false; }, 200);
+  }
+}, [address, enabled, publicClient, ymd]);
+
 
   // Listen to "wg:wool-click" from your existing UI
   useEffect(() => {
