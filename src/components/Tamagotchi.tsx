@@ -56,8 +56,10 @@ const DEAD_KEY = "dead_v1";
 const DEATH_REASON_KEY = "death_reason_v1";
 /** Infection cap (max 2 infections per rolling 24h) */
 const INFECTION_LOG_KEY = "sick_log_v1";
-/** Forced poop accumulator (1 poop per 30 minutes of awake time) */
+/** Forced poop accumulator (awake-time minutes) */
 const FORCED_POOP_ACC_KEY = "poop_acc_v1";
+/** Guard: at most 1 poop per 30m (awake) across ALL sources */
+const LAST_POOP_AT_KEY = "poop_last_v1";
 
 /** Scene */
 const LOGICAL_W = 320, LOGICAL_H = 180;
@@ -205,8 +207,21 @@ export default function Tamagotchi({
     return Number.isFinite(raw) && raw >= 0 ? raw : 0;
   })();
   const forcedPoopAccRef = useRef<number>(initialPoopAcc);
+
+  /** Poop cooldown guard: last spawn wallclock */
+  const lastPoopAtRef = useRef<number>(() => {
+    const raw = Number(localStorage.getItem(sk(LAST_POOP_AT_KEY)) || 0);
+    return Number.isFinite(raw) && raw >= 0 ? raw : 0;
+  }) as React.MutableRefObject<number>;
+
   useEffect(() => {
-    return () => { try { localStorage.setItem(sk(FORCED_POOP_ACC_KEY), String(forcedPoopAccRef.current)); } catch {} };
+    // Persist on unmount
+    return () => {
+      try {
+        localStorage.setItem(sk(FORCED_POOP_ACC_KEY), String(forcedPoopAccRef.current));
+        localStorage.setItem(sk(LAST_POOP_AT_KEY), String(lastPoopAtRef.current));
+      } catch {}
+    };
   }, []);
 
   // ------- Force-dead preview -------
@@ -278,7 +293,7 @@ export default function Tamagotchi({
         SET(LAST_SEEN_KEY, LEG("wg_last_seen_v3"));
         SET(AGE_MAX_WALL_KEY, LEG("wg_age_max_wall_v2"));
         SET(POOPS_KEY, LEG("wg_poops_v1"));
-        SET(CATA_SCHEDULE_KEY, LEG("wg_cata_schedule_v2"));
+               SET(CATA_SCHEDULE_KEY, LEG("wg_cata_schedule_v2"));
         SET(CATA_CONSUMED_KEY, LEG("wg_cata_consumed_v2"));
       }
     } catch {}
@@ -301,6 +316,12 @@ export default function Tamagotchi({
     if (ssH > wkH || (ssH === wkH && ssM > wkM)) return afterStart || beforeWake;
     return afterStart && beforeWake;
   }
+
+  /** Tell WOOL provider current stage */
+  useEffect(() => {
+    const stage = getLifeStage(form);
+    try { window.dispatchEvent(new CustomEvent("wg:pet-stage", { detail: { stage } })); } catch {}
+  }, [form]);
 
   /** Catastrophe schedule (first in 30s) */
   useEffect(() => {
@@ -402,7 +423,6 @@ export default function Tamagotchi({
           localStorage.setItem(sk(CATA_CONSUMED_KEY), JSON.stringify(uniq));
         }
 
-        // Persist new infections produced during offline simulation
         if (Array.isArray(res.infectionTimes) && res.infectionTimes.length) {
           const now = Date.now();
           const dayAgo = now - 24 * 3600_000;
@@ -414,7 +434,7 @@ export default function Tamagotchi({
       localStorage.setItem(sk(LAST_SEEN_KEY), String(nowWall));
       localStorage.setItem(sk(AGE_MAX_WALL_KEY), String(Math.max(prevMax, nowWall)));
     } catch {}
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-exps
 
   /** Age ticker */
   useEffect(() => {
@@ -441,6 +461,7 @@ export default function Tamagotchi({
         localStorage.setItem(sk(AGE_MAX_WALL_KEY), String(Math.max(prevMax, now)));
         localStorage.setItem(sk(AGE_MS_KEY), String(ageRefPersist.current));
         localStorage.setItem(sk(FORCED_POOP_ACC_KEY), String(forcedPoopAccRef.current));
+        localStorage.setItem(sk(LAST_POOP_AT_KEY), String(lastPoopAtRef.current));
       } catch {}
     };
     const id = setInterval(save, 15000);
@@ -455,6 +476,7 @@ export default function Tamagotchi({
       try {
         localStorage.setItem(sk(AGE_MS_KEY), String(ageRefPersist.current));
         localStorage.setItem(sk(FORCED_POOP_ACC_KEY), String(forcedPoopAccRef.current));
+        localStorage.setItem(sk(LAST_POOP_AT_KEY), String(lastPoopAtRef.current));
       } catch {}
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -501,6 +523,17 @@ export default function Tamagotchi({
     });
   }
 
+  /** Gate: allow at most 1 poop per 30 minutes of awake time */
+  const THIRTY_MIN_MS = 30 * 60 * 1000;
+  function maybeSpawnPoop(now: number) {
+    if (now - lastPoopAtRef.current >= THIRTY_MIN_MS) {
+      spawnPoop();
+      lastPoopAtRef.current = now;
+      forcedPoopAccRef.current = 0; // reset accumulator window
+      try { window.dispatchEvent(new CustomEvent("wg:poop")); } catch {}
+    }
+  }
+
   const act = {
     feedBurger: () => {
       if (!canBurger) return;
@@ -508,7 +541,7 @@ export default function Tamagotchi({
         hunger: s.hunger + FEED_EFFECTS.burger.hunger,
         happiness: s.happiness + FEED_EFFECTS.burger.happiness
       }));
-      if (Math.random() < 0.7) spawnPoop();
+      if (Math.random() < 0.7) maybeSpawnPoop(nowMs()); // guarded
       setFoodAnim({ kind: "burger", startedAt: nowMs() });
       setLastBurgerAt(nowMs());
       try { window.dispatchEvent(new CustomEvent("wg:feed")); } catch {}
@@ -519,7 +552,7 @@ export default function Tamagotchi({
         hunger: s.hunger + FEED_EFFECTS.cake.hunger,
         happiness: s.happiness + FEED_EFFECTS.cake.happiness
       }));
-      if (Math.random() < 0.5) spawnPoop();
+      if (Math.random() < 0.5) maybeSpawnPoop(nowMs()); // guarded
       setFoodAnim({ kind: "cake", startedAt: nowMs() });
       setLastCakeAt(nowMs());
       try { window.dispatchEvent(new CustomEvent("wg:feed")); } catch {}
@@ -559,6 +592,7 @@ export default function Tamagotchi({
       localStorage.removeItem(sk(DEATH_REASON_KEY));
       localStorage.removeItem(sk(INFECTION_LOG_KEY));
       localStorage.removeItem(sk(FORCED_POOP_ACC_KEY));
+      localStorage.removeItem(sk(LAST_POOP_AT_KEY));
     } catch {}
     setForm("egg");
     setStats({ cleanliness: 0.9, hunger: 0.65, happiness: 0.6, health: 1.0 });
@@ -572,6 +606,7 @@ export default function Tamagotchi({
     setCleaning(null);
     setLifeSpentForThisDeath(false);
     forcedPoopAccRef.current = 0;
+    lastPoopAtRef.current = 0;
     const now = Date.now();
     try {
       localStorage.setItem(sk(START_TS_KEY), String(now));
@@ -608,7 +643,6 @@ export default function Tamagotchi({
   /** Drains / online catastrophes */
   useEffect(() => {
     let lastWall = Date.now();
-    const THIRTY_MIN_MS = 30 * 60 * 1000;
     const id = window.setInterval(() => {
       const now = Date.now();
       const dt = clampDt(now - lastWall);
@@ -666,10 +700,10 @@ export default function Tamagotchi({
         const happyPerMs  = sickRef.current ? 1 / (8 * 60 * 1000)  : 1 / (12 * 60 * 60 * 1000);
         const dirtPerMs   = (poopsRef.current.length > 0 ? 1 / (5 * 60 * 60 * 1000) : 1 / (12 * 60 * 60 * 1000));
 
-        // Forced poop: one every 30 minutes of awake time
+        // Accumulate awake time; when >= 30m, spawn exactly one poop
         forcedPoopAccRef.current += dt;
         while (forcedPoopAccRef.current >= THIRTY_MIN_MS) {
-          spawnPoop();
+          maybeSpawnPoop(now); // guarded: will only spawn if 30m window passed
           forcedPoopAccRef.current -= THIRTY_MIN_MS;
         }
 
@@ -692,13 +726,14 @@ export default function Tamagotchi({
         });
       }
 
+      // Random dirt — but never more than one poop per 30 minutes (guarded)
       if (!sleeping && !deadRef.current) {
-        if (Math.random() < 0.07) spawnPoop();
+        if (Math.random() < 0.07) maybeSpawnPoop(now);
         const dirtFactor = Math.min(1, poopsRef.current.length / 5);
         const lowClean = 1 - statsRef.current.cleanliness;
         const p = 0.02 + 0.3 * dirtFactor + 0.2 * lowClean;
 
-        // Infect only if the rolling 24h infection count < 2
+        // Infection: capped by rolling 24h log
         if (!sickRef.current && Math.random() < p * 0.03 && canInfectNow(sk)) {
           setIsSick(true);
           recordInfection(sk);
@@ -888,7 +923,7 @@ export default function Tamagotchi({
       const maxX = LOGICAL_W - drawW;
 
       // walking & frame selection
-      let xNext = x + (dir * WALK_SPEED * dt) / 1000;
+      let xNext = x + (dir * WALK_SPEED * (Math.min(100, ts - last))) / 1000;
       const inTurnCooldown = (ts - lastTurnAt) < TURN_COOLDOWN;
 
       if (!deadUi && !sleepingNow) {
@@ -905,7 +940,7 @@ export default function Tamagotchi({
         }
       }
 
-      frameTimer += dt;
+      frameTimer += Math.min(100, ts - last + 0); // keep advancing frames
       if (frameTimer > 1e6) frameTimer %= 1e6;
       let frameIndex = 0;
       if (frames.length >= 2) {
@@ -947,7 +982,7 @@ export default function Tamagotchi({
         const scoopImg = images[SCOOP_SRC];
         const scoopH = SCOOP_HEIGHT_TARGET;
         const scoopW = scoopImg ? Math.round((scoopImg.width / scoopImg.height) * scoopH) : 28;
-        st.x -= (SCOOP_SPEED_PX_S * dt) / 1000;
+        st.x -= (SCOOP_SPEED_PX_S * Math.min(100, ts - last + 0)) / 1000;
         const sy = Math.round(LOGICAL_H - BASE_GROUND - scoopH + EXTRA_DOWN);
         if (scoopImg) ctx.drawImage(scoopImg, Math.round(st.x), sy, scoopW, scoopH);
         else { ctx.font = "14px monospace"; ctx.fillText("🧹", Math.round(st.x), sy); }
@@ -1000,7 +1035,7 @@ export default function Tamagotchi({
   /** Clipboard helper */
   const copyAddr = async () => { try { await navigator.clipboard.writeText(NFT_CONTRACT); } catch {} };
 
-  // render-time flags and death overlay
+  const isAdult = getLifeStage(form) === "adult";
   const deadNow = isDead || forceDeadPreview;
   const showDeathOverlay = deadNow;
 
@@ -1015,22 +1050,11 @@ export default function Tamagotchi({
             Lives left: <b>{lives}</b>
           </div>
           <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-            <button
-              className="btn btn-primary"
-              onClick={() => {
-                performReset();
-              }}
-            >
-              Start new life
-            </button>
+            <button className="btn btn-primary" onClick={() => { performReset(); }}>Start new life</button>
             <button
               className="btn"
               onClick={() => {
-                window.dispatchEvent(
-                  new CustomEvent("wg:request-nft", {
-                    detail: { to: NFT_CONTRACT, address: walletAddress }
-                  })
-                );
+                window.dispatchEvent(new CustomEvent("wg:request-nft", { detail: { to: NFT_CONTRACT, address: walletAddress } }));
               }}
             >
               Send 1 NFT → +1 life
@@ -1042,11 +1066,7 @@ export default function Tamagotchi({
           <button
             className="btn btn-primary"
             onClick={() => {
-              window.dispatchEvent(
-                new CustomEvent("wg:request-nft", {
-                  detail: { to: NFT_CONTRACT, address: walletAddress }
-                })
-              );
+              window.dispatchEvent(new CustomEvent("wg:request-nft", { detail: { to: NFT_CONTRACT, address: walletAddress } }));
             }}
           >
             Send 1 NFT → +1 life
@@ -1094,7 +1114,15 @@ export default function Tamagotchi({
           pointerEvents: deadNow ? ("none" as const) : ("auto" as const),
         }}
       >
-        <button className="btn" disabled title="Coming soon" style={{ opacity: 0.45, cursor: "not-allowed" }}>🧶 WOOL</button>
+        <button
+          className="btn"
+          onClick={() => { try { window.dispatchEvent(new CustomEvent("wg:wool-click")); } catch {} }}
+          disabled={!isAdult}
+          title={!isAdult ? "Available at adult stage" : undefined}
+          style={{ opacity: !isAdult ? 0.45 : 1, cursor: !isAdult ? "not-allowed" : "pointer" }}
+        >
+          🧶 WOOL
+        </button>
         <button className="btn" onClick={act.feedBurger} disabled={burgerLeft>0}>🍔 Burger{burgerLeft>0?` (${Math.ceil(burgerLeft/1000)}s)`:``}</button>
         <button className="btn" onClick={act.feedCake} disabled={cakeLeft>0}>🍰 Cake{cakeLeft>0?` (${Math.ceil(cakeLeft/1000)}s)`:``}</button>
         <button className="btn" onClick={act.play}>🎮 Play</button>
