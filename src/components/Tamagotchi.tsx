@@ -54,6 +54,8 @@ const STATS_KEY = "stats_v1";
 const SICK_KEY = "sick_v1";
 const DEAD_KEY = "dead_v1";
 const DEATH_REASON_KEY = "death_reason_v1";
+/** Infection cap log (max 2 infections per rolling 24h) */
+const INFECTION_LOG_KEY = "sick_log_v1";
 
 /** Scene */
 const LOGICAL_W = 320, LOGICAL_H = 180;
@@ -341,6 +343,7 @@ export default function Tamagotchi({
         const minutes = Math.floor(elapsed / 60000);
         const schedule: number[] = JSON.parse(localStorage.getItem(sk(CATA_SCHEDULE_KEY)) || "[]");
         const consumed: number[] = JSON.parse(localStorage.getItem(sk(CATA_CONSUMED_KEY)) || "[]");
+        const infectionLog = readInfectionLog(sk);
 
         const res = simulateOffline({
           startWall: lastWall,
@@ -351,6 +354,8 @@ export default function Tamagotchi({
           sleepCheck: isSleepingAt,
           schedule,
           consumed,
+          infectionLog,
+          maxInfectionsPerDay: 2
         });
 
         setStats(() => clampStats(res.stats));
@@ -363,7 +368,6 @@ export default function Tamagotchi({
             (res.wasCatastrophe ? "fatal event" : res.wasSick ? "illness" : "collapse");
 
           if ((lives || 0) > 0) {
-            // spend life immediately and reset state without showing dead sprite persistently
             if (!lifeSpentForThisDeath) {
               onLoseLife?.();
               setLifeSpentForThisDeath(true);
@@ -375,7 +379,6 @@ export default function Tamagotchi({
             setForceDeadPreview(false);
             performReset();
           } else {
-            // no lives -> show death screen and reason
             setIsDead(true);
             setDeathReason(reason);
             try { window.dispatchEvent(new CustomEvent("wg:pet-dead")); } catch {}
@@ -385,6 +388,14 @@ export default function Tamagotchi({
         if (res.newConsumed.length) {
           const uniq = Array.from(new Set([...consumed, ...res.newConsumed])).sort((a, b) => a - b);
           localStorage.setItem(sk(CATA_CONSUMED_KEY), JSON.stringify(uniq));
+        }
+
+        // Persist new infection events produced during offline sim
+        if (Array.isArray(res.infectionTimes) && res.infectionTimes.length) {
+          const now = Date.now();
+          const dayAgo = now - 24 * 3600_000;
+          const merged = [...readInfectionLog(sk), ...res.infectionTimes].filter(t => t >= dayAgo).sort((a,b)=>a-b);
+          writeInfectionLog(sk, merged);
         }
       }
 
@@ -530,6 +541,7 @@ export default function Tamagotchi({
       localStorage.removeItem(sk(SICK_KEY));
       localStorage.removeItem(sk(DEAD_KEY));
       localStorage.removeItem(sk(DEATH_REASON_KEY));
+      localStorage.removeItem(sk(INFECTION_LOG_KEY));
     } catch {}
     setForm("egg");
     setStats({ cleanliness: 0.9, hunger: 0.65, happiness: 0.6, health: 1.0 });
@@ -561,14 +573,6 @@ export default function Tamagotchi({
       window.dispatchEvent(new CustomEvent("wg:pet-dead"));
     }
   }, [isDead]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  /** We intentionally do NOT auto-reset when lives > 0.
-   *  Life is decremented by the effect above.
-   *  Player should see the death overlay and choose:
-   *  - "Start new life" (performReset), or
-   *  - "Send 1 NFT → +1 life".
-   */
-  // (auto-reset effect removed)
 
   /** When new life confirmed → reset (and clear any preview) */
   useEffect(() => {
@@ -638,8 +642,9 @@ export default function Tamagotchi({
       if (!sleeping && dt > 0) {
         const fast = catastropheRef.current && now < (catastropheRef.current?.until ?? 0);
         const hungerPerMs = fast ? 1 / 60000 : 1 / (90 * 60 * 1000);
+        /** Sick health drain: 90 minutes to zero when sick */
         const healthPerMs = sickRef.current ? 1 / (90 * 60 * 1000) : 1 / (10 * 60 * 60 * 1000);
-        const happyPerMs  = sickRef.current ? 1 / (8 * 60 * 1000) : 1 / (12 * 60 * 60 * 1000);
+        const happyPerMs  = sickRef.current ? 1 / (8 * 60 * 1000)  : 1 / (12 * 60 * 60 * 1000);
         const dirtPerMs   = (poopsRef.current.length > 0 ? 1 / (5 * 60 * 60 * 1000) : 1 / (12 * 60 * 60 * 1000));
 
         setStats((s) => {
@@ -666,7 +671,12 @@ export default function Tamagotchi({
         const dirtFactor = Math.min(1, poopsRef.current.length / 5);
         const lowClean = 1 - statsRef.current.cleanliness;
         const p = 0.02 + 0.3 * dirtFactor + 0.2 * lowClean;
-        if (!sickRef.current && Math.random() < p * 0.03) setIsSick(true);
+
+        // Infect only if the rolling 24h infection count < 2
+        if (!sickRef.current && Math.random() < p * 0.03 && canInfectNow(sk)) {
+          setIsSick(true);
+          recordInfection(sk);
+        }
         if (sickRef.current && Math.random() < 0.015) setIsSick(false);
       }
     }, 1000);
@@ -771,7 +781,6 @@ export default function Tamagotchi({
       const nowAbs = Date.now();
       const sleepingNow = isSleepingAt(nowAbs);
 
-      // use refs so state changes are reflected without recreating the loop
       const deadUi = deadRef.current || forceDeadPreviewRef.current;
 
       const avatarAnimKey: AnimKey = (() => {
@@ -983,7 +992,6 @@ export default function Tamagotchi({
             <button
               className="btn btn-primary"
               onClick={() => {
-                // life has already been decremented by effect; just restart the run
                 performReset();
               }}
             >
@@ -1150,13 +1158,41 @@ function safeReadJSON<T>(key: string): T | null {
   try { const raw = localStorage.getItem(key); if (!raw) return null; return JSON.parse(raw) as T; } catch { return null; }
 }
 
-/** Offline simulator — unchanged */
+/** Infection log helpers (max N infections per rolling 24h) */
+function readInfectionLog(skf: (k: string) => string) {
+  try {
+    const arr = safeReadJSON<number[]>(skf(INFECTION_LOG_KEY));
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+function writeInfectionLog(skf: (k: string) => string, list: number[]) {
+  try { localStorage.setItem(skf(INFECTION_LOG_KEY), JSON.stringify(list)); } catch {}
+}
+function canInfectNow(skf: (k: string) => string, now = Date.now()) {
+  const dayAgo = now - 24 * 3600_000;
+  const log = readInfectionLog(skf).filter(t => t >= dayAgo);
+  return log.length < 2;
+}
+function recordInfection(skf: (k: string) => string, ts = Date.now()) {
+  const dayAgo = ts - 24 * 3600_000;
+  const log = readInfectionLog(skf).filter(t => t >= dayAgo);
+  log.push(ts);
+  writeInfectionLog(skf, log);
+}
+
+/** Offline simulator */
 function simulateOffline(args: {
   startWall: number; minutes: number; startAgeMs: number;
   startStats: Stats; startSick: boolean;
   sleepCheck: (ts: number) => boolean;
   schedule: number[]; consumed: number[];
-}): { stats: Stats; sick: boolean; newConsumed: number[]; died: boolean; deathReason?: string; wasCatastrophe?: boolean; wasSick?: boolean } {
+  infectionLog?: number[];
+  maxInfectionsPerDay?: number;
+}): {
+  stats: Stats; sick: boolean; newConsumed: number[];
+  died: boolean; deathReason?: string; wasCatastrophe?: boolean; wasSick?: boolean;
+  infectionTimes: number[];
+} {
   let s = { ...args.startStats };
   let sick = args.startSick;
   const newly: number[] = [];
@@ -1166,6 +1202,7 @@ function simulateOffline(args: {
   const happyPerMinNormal  = 1 / (12 * 60);
   const dirtPerMinNormal   = 1 / (12 * 60);
 
+  /** Sick health drain: 90 minutes to zero offline */
   const healthPerMinSick = 1 / 90;
   const happyPerMinSick  = 1 / 8;
 
@@ -1173,6 +1210,17 @@ function simulateOffline(args: {
 
   const schedule = [...(args.schedule || [])].sort((a,b)=>a-b);
   const consumedSet = new Set<number>(args.consumed || []);
+
+  const maxPerDay = args.maxInfectionsPerDay ?? 2;
+  const infectionLog = Array.isArray(args.infectionLog) ? args.infectionLog.slice().sort((a,b)=>a-b) : [];
+  const infectionTimes: number[] = [];
+  function canInfectAt(ts: number) {
+    const dayAgo = ts - 24 * 3600_000;
+    let count = 0;
+    for (const t of infectionLog) if (t >= dayAgo && t <= ts) count++;
+    for (const t of infectionTimes) if (t >= dayAgo && t <= ts) count++;
+    return count < maxPerDay;
+  }
 
   let died = false;
   let deathReason: string | undefined;
@@ -1221,14 +1269,17 @@ function simulateOffline(args: {
       if (!sick) {
         const lowClean = 1 - s.cleanliness;
         const p = 0.02 + 0.3 * 0.3 + 0.2 * lowClean;
-        if (Math.random() < p * 0.03 * 60) sick = true;
+        if (Math.random() < p * 0.03 * 60 && canInfectAt(minuteWall)) {
+          sick = true;
+          infectionTimes.push(minuteWall);
+        }
       } else {
         if (Math.random() < 0.015 * 60) sick = false;
       }
     }
   }
 
-  return { stats: clampStats(s), sick, newConsumed: newly, died, deathReason, wasCatastrophe, wasSick: false };
+  return { stats: clampStats(s), sick, newConsumed: newly, died, deathReason, wasCatastrophe, wasSick: false, infectionTimes };
 }
 
 /** Tiny UI atoms */
