@@ -638,7 +638,7 @@ export default function Tamagotchi({
       if (!sleeping && dt > 0) {
         const fast = catastropheRef.current && now < (catastropheRef.current?.until ?? 0);
         const hungerPerMs = fast ? 1 / 60000 : 1 / (90 * 60 * 1000);
-        const healthPerMs = sickRef.current ? 1 / (7 * 60 * 1000) : 1 / (10 * 60 * 60 * 1000);
+        const healthPerMs = sickRef.current ? 1 / (90 * 60 * 1000) : 1 / (10 * 60 * 60 * 1000);
         const happyPerMs  = sickRef.current ? 1 / (8 * 60 * 1000) : 1 / (12 * 60 * 60 * 1000);
         const dirtPerMs   = (poopsRef.current.length > 0 ? 1 / (5 * 60 * 60 * 1000) : 1 / (12 * 60 * 60 * 1000));
 
@@ -1166,7 +1166,7 @@ function simulateOffline(args: {
   const happyPerMinNormal  = 1 / (12 * 60);
   const dirtPerMinNormal   = 1 / (12 * 60);
 
-  const healthPerMinSick = 1 / 7;
+  const healthPerMinSick = 1 / 90;
   const happyPerMinSick  = 1 / 8;
 
   const hungerPerMinFast = 1;
