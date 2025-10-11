@@ -1,7 +1,7 @@
 // src/App.tsx
 // English-only comments.
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useAccount, useConnect, useDisconnect, useChainId } from "wagmi";
 
 import { MONAD } from "./utils/wagmiConfigLike";
@@ -24,27 +24,41 @@ const ls = {
   set: (k: string, v: any) => {
     try { localStorage.setItem(k, JSON.stringify(v)); } catch {}
   },
+  del: (k: string) => {
+    try { localStorage.removeItem(k); } catch {}
+  }
 };
 
 const CHAIN_ID = MONAD.id;
-const PENDING_LIFE_KEY = "wg_pending_life";
+const PENDING_LIFE_KEY = "wg_pending_life"; // value: address string (lowercased)
 const LIVES_KEY = "wg_lives_v1";
 
-/* Lives (namespaced per chain+address, with optimistic bump) */
+/* Lives (namespaced per chain+address, with optimistic bump guarded) */
 function useOptimisticLives(address?: string | null) {
   const [lives, setLives] = useState<number>(0);
+
   useEffect(() => {
     const addr = address?.toLowerCase();
     if (!addr) return setLives(0);
-    const k = `${CHAIN_ID}:${addr}`;
+
+    const key = `${CHAIN_ID}:${addr}`;
     try {
       const raw = localStorage.getItem(LIVES_KEY);
       const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
-      const optimisticFor = ls.get(PENDING_LIFE_KEY) as string | null;
-      const base = map[k] ?? 0;
-      setLives(optimisticFor && optimisticFor.toLowerCase() === addr ? Math.max(base, 1) : base);
-    } catch { setLives(0); }
+      const optimisticFor = (ls.get(PENDING_LIFE_KEY) as string | null)?.toLowerCase() || null;
+
+      const base = map[key] ?? 0;
+
+      // Apply optimistic +1 only if:
+      // - pending key matches this address
+      // - and base is still 0 (not already credited)
+      const optimistic = optimisticFor === addr && base === 0 ? 1 : 0;
+      setLives(Math.max(base, optimistic));
+    } catch {
+      setLives(0);
+    }
   }, [address]);
+
   return lives;
 }
 
@@ -97,6 +111,9 @@ function AppInner() {
   const [forceGame, setForceGame] = useState(false);
 
   const livesCount = useOptimisticLives(address);
+  const livesRef = useRef(0);
+  useEffect(() => { livesRef.current = livesCount; }, [livesCount]);
+
   const activeAddr = address ?? null;
 
   // helper to write lives (kept for completeness)
@@ -111,6 +128,22 @@ function AppInner() {
     } catch {}
   };
 
+  // reconcile/cleanup pending flag when lives become real or zero
+  useEffect(() => {
+    const a = (activeAddr || "").toLowerCase();
+    if (!a) return;
+    const pending = (ls.get(PENDING_LIFE_KEY) as string | null)?.toLowerCase() || null;
+
+    // If we now have a real life (>0), drop the optimistic flag for this address
+    if (livesCount > 0 && pending === a) {
+      ls.del(PENDING_LIFE_KEY);
+    }
+    // If lives are zero, also drop stale pending for this address (prevents phantom +1)
+    if (livesCount === 0 && pending === a) {
+      ls.del(PENDING_LIFE_KEY);
+    }
+  }, [activeAddr, livesCount]);
+
   // decrement once on death (called by Tamagotchi via prop)
   const handleLoseLife = () => {
     const a = (activeAddr || "").toLowerCase();
@@ -123,6 +156,10 @@ function AppInner() {
       map[key] = next;
       localStorage.setItem(LIVES_KEY, JSON.stringify(map));
     } catch {}
+    // On life loss, ensure we don't keep the optimistic flag
+    const pending = (ls.get(PENDING_LIFE_KEY) as string | null)?.toLowerCase() || null;
+    if (pending === a) ls.del(PENDING_LIFE_KEY);
+
     setForceGame(false);
   };
 
@@ -140,7 +177,8 @@ function AppInner() {
 
     const onConfirmed = () => {
       if (activeAddr) {
-        ls.set(PENDING_LIFE_KEY, activeAddr);
+        // We no longer set the pending flag here; a real life is credited below.
+        // If some other code set it earlier, it will be cleared by the reconcile effect.
         const key = `${CHAIN_ID}:${activeAddr.toLowerCase()}`;
         const raw = localStorage.getItem(LIVES_KEY);
         const map = raw ? (JSON.parse(raw) as Record<string, number>) : {};
@@ -153,7 +191,13 @@ function AppInner() {
 
     const onOpenGame = () => {
       setIsVaultOpen(false);
-      setForceGame(true);
+      // Harden the gate: allow opening the game only if we actually have a life
+      if (livesRef.current > 0) {
+        setForceGame(true);
+      } else {
+        // No lives -> redirect to Vault instead of silently opening the game
+        setIsVaultOpen(true);
+      }
     };
 
     window.addEventListener("wg:request-nft", onRequestNft as any);
@@ -181,7 +225,7 @@ function AppInner() {
     return () => window.removeEventListener("wg:life-spent", onLifeSpent as any);
   }, []);
 
-  // Gate state still computed (for overlays), but the game mounts regardless
+  // Gate state for overlays; the game mounts regardless
   const gate: "splash" | "locked" | "game" =
     !isConnected ? "splash" : (forceGame || livesCount > 0) ? "game" : "locked";
 
@@ -395,4 +439,4 @@ export default function App() {
       </WoolProvider>
     </AudioProvider>
   );
-} 
+}
