@@ -54,8 +54,10 @@ const STATS_KEY = "stats_v1";
 const SICK_KEY = "sick_v1";
 const DEAD_KEY = "dead_v1";
 const DEATH_REASON_KEY = "death_reason_v1";
-/** Infection cap log (max 2 infections per rolling 24h) */
+/** Infection cap (max 2 infections per rolling 24h) */
 const INFECTION_LOG_KEY = "sick_log_v1";
+/** Forced poop accumulator (1 poop per 30 minutes of awake time) */
+const FORCED_POOP_ACC_KEY = "poop_acc_v1";
 
 /** Scene */
 const LOGICAL_W = 320, LOGICAL_H = 180;
@@ -196,6 +198,16 @@ export default function Tamagotchi({
 
   const sleepParamsRef = useRef({ useAutoTime, sleepStart, wakeTime, sleepLocked });
   useEffect(() => { sleepParamsRef.current = { useAutoTime, sleepStart, wakeTime, sleepLocked }; }, [useAutoTime, sleepStart, wakeTime, sleepLocked]);
+
+  /** Forced poop accumulator init (awake time only) */
+  const initialPoopAcc = (() => {
+    const raw = Number(localStorage.getItem(sk(FORCED_POOP_ACC_KEY)) || 0);
+    return Number.isFinite(raw) && raw >= 0 ? raw : 0;
+  })();
+  const forcedPoopAccRef = useRef<number>(initialPoopAcc);
+  useEffect(() => {
+    return () => { try { localStorage.setItem(sk(FORCED_POOP_ACC_KEY), String(forcedPoopAccRef.current)); } catch {} };
+  }, []);
 
   // ------- Force-dead preview -------
   const [forceDeadPreview, setForceDeadPreview] = useState(false);
@@ -390,7 +402,7 @@ export default function Tamagotchi({
           localStorage.setItem(sk(CATA_CONSUMED_KEY), JSON.stringify(uniq));
         }
 
-        // Persist new infection events produced during offline sim
+        // Persist new infections produced during offline simulation
         if (Array.isArray(res.infectionTimes) && res.infectionTimes.length) {
           const now = Date.now();
           const dayAgo = now - 24 * 3600_000;
@@ -428,6 +440,7 @@ export default function Tamagotchi({
         const prevMax = Number(localStorage.getItem(sk(AGE_MAX_WALL_KEY)) || now);
         localStorage.setItem(sk(AGE_MAX_WALL_KEY), String(Math.max(prevMax, now)));
         localStorage.setItem(sk(AGE_MS_KEY), String(ageRefPersist.current));
+        localStorage.setItem(sk(FORCED_POOP_ACC_KEY), String(forcedPoopAccRef.current));
       } catch {}
     };
     const id = setInterval(save, 15000);
@@ -439,7 +452,10 @@ export default function Tamagotchi({
       window.removeEventListener("visibilitychange", save);
       window.removeEventListener("pagehide", save);
       window.removeEventListener("beforeunload", save);
-      try { localStorage.setItem(sk(AGE_MS_KEY), String(ageRefPersist.current)); } catch {}
+      try {
+        localStorage.setItem(sk(AGE_MS_KEY), String(ageRefPersist.current));
+        localStorage.setItem(sk(FORCED_POOP_ACC_KEY), String(forcedPoopAccRef.current));
+      } catch {}
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -542,6 +558,7 @@ export default function Tamagotchi({
       localStorage.removeItem(sk(DEAD_KEY));
       localStorage.removeItem(sk(DEATH_REASON_KEY));
       localStorage.removeItem(sk(INFECTION_LOG_KEY));
+      localStorage.removeItem(sk(FORCED_POOP_ACC_KEY));
     } catch {}
     setForm("egg");
     setStats({ cleanliness: 0.9, hunger: 0.65, happiness: 0.6, health: 1.0 });
@@ -554,6 +571,7 @@ export default function Tamagotchi({
     setFoodAnim(null);
     setCleaning(null);
     setLifeSpentForThisDeath(false);
+    forcedPoopAccRef.current = 0;
     const now = Date.now();
     try {
       localStorage.setItem(sk(START_TS_KEY), String(now));
@@ -590,6 +608,7 @@ export default function Tamagotchi({
   /** Drains / online catastrophes */
   useEffect(() => {
     let lastWall = Date.now();
+    const THIRTY_MIN_MS = 30 * 60 * 1000;
     const id = window.setInterval(() => {
       const now = Date.now();
       const dt = clampDt(now - lastWall);
@@ -642,10 +661,17 @@ export default function Tamagotchi({
       if (!sleeping && dt > 0) {
         const fast = catastropheRef.current && now < (catastropheRef.current?.until ?? 0);
         const hungerPerMs = fast ? 1 / 60000 : 1 / (90 * 60 * 1000);
-        /** Sick health drain: 90 minutes to zero when sick */
+        /** Sick health drain: 90 minutes to zero when sick (online) */
         const healthPerMs = sickRef.current ? 1 / (90 * 60 * 1000) : 1 / (10 * 60 * 60 * 1000);
         const happyPerMs  = sickRef.current ? 1 / (8 * 60 * 1000)  : 1 / (12 * 60 * 60 * 1000);
         const dirtPerMs   = (poopsRef.current.length > 0 ? 1 / (5 * 60 * 60 * 1000) : 1 / (12 * 60 * 60 * 1000));
+
+        // Forced poop: one every 30 minutes of awake time
+        forcedPoopAccRef.current += dt;
+        while (forcedPoopAccRef.current >= THIRTY_MIN_MS) {
+          spawnPoop();
+          forcedPoopAccRef.current -= THIRTY_MIN_MS;
+        }
 
         setStats((s) => {
           const next = clampStats({
@@ -781,8 +807,8 @@ export default function Tamagotchi({
       const nowAbs = Date.now();
       const sleepingNow = isSleepingAt(nowAbs);
 
+      // avatar HUD
       const deadUi = deadRef.current || forceDeadPreviewRef.current;
-
       const avatarAnimKey: AnimKey = (() => {
         if (deadUi) return "idle";
         if (sleepingNow) return (def.sleep?.length ? "sleep" : "idle") as AnimKey;
@@ -792,7 +818,6 @@ export default function Tamagotchi({
       })();
       const avatarFrames = (def[avatarAnimKey] ?? def.idle ?? def.walk ?? []) as string[];
       const avatarSrc = avatarFrames[0];
-
       if (avatarSrc && images[avatarSrc]) {
         const av = images[avatarSrc];
         const nativeMax = Math.max(av.width, av.height);
@@ -800,18 +825,14 @@ export default function Tamagotchi({
         const scale = nativeMax > scaleCap ? (scaleCap / nativeMax) : 1;
         const aw = Math.round(av.width * scale);
         const ah = Math.round(av.height * scale);
-
         const padX = 10, padY = 6;
         const ax = LOGICAL_W - padX - aw;
         const ay = padY;
-
         (ctx as any).imageSmoothingEnabled = false;
         ctx.drawImage(av, ax, ay, aw, ah);
-
         let hp = Math.round((statsRef.current.health ?? 0) * 100);
         if (deadUi) hp = 0;
         const label = `❤️ ${hp}%`;
-
         ctx.font = "10px monospace";
         ctx.textBaseline = "top";
         const tw = ctx.measureText(label).width;
@@ -828,6 +849,7 @@ export default function Tamagotchi({
       ctx.save();
       ctx.translate(0, Y_SHIFT);
 
+      // poop draw
       const curPoops = poopsRef.current;
       if (curPoops.length) {
         for (const p of curPoops) {
@@ -839,6 +861,7 @@ export default function Tamagotchi({
         }
       }
 
+      // choose animation
       const chosenAnim: AnimKey = (() => {
         if (deadUi) return "idle";
         if (sleepingNow) return (def.sleep?.length ? "sleep" : "idle") as AnimKey;
@@ -864,6 +887,7 @@ export default function Tamagotchi({
       const minX = 0;
       const maxX = LOGICAL_W - drawW;
 
+      // walking & frame selection
       let xNext = x + (dir * WALK_SPEED * dt) / 1000;
       const inTurnCooldown = (ts - lastTurnAt) < TURN_COOLDOWN;
 
@@ -889,6 +913,7 @@ export default function Tamagotchi({
         frameIndex = step % frames.length;
       }
 
+      // draw pet or dead sprite
       if (deadUi) {
         const list = deadCandidates(formRef.current);
         const deadSrc = list.find((p) => images[p]);
@@ -916,6 +941,7 @@ export default function Tamagotchi({
         }
       }
 
+      // cleaning sweep
       if (cleaningRef.current?.active) {
         const st = cleaningRef.current!;
         const scoopImg = images[SCOOP_SRC];
@@ -1202,7 +1228,7 @@ function simulateOffline(args: {
   const happyPerMinNormal  = 1 / (12 * 60);
   const dirtPerMinNormal   = 1 / (12 * 60);
 
-  /** Sick health drain: 90 minutes to zero offline */
+  /** Sick health drain: 90 minutes to zero (offline) */
   const healthPerMinSick = 1 / 90;
   const happyPerMinSick  = 1 / 8;
 
