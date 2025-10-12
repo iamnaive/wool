@@ -694,10 +694,9 @@ export default function Tamagotchi({
       const sleeping = isSleepingAt(now);
       if (!sleeping && dt > 0) {
         const fast = catastropheRef.current && now < (catastropheRef.current?.until ?? 0);
-        const hungerPerMs = fast ? 1 / 60000 : 1 / (90 * 60 * 1000);
-        /** Sick health drain: 90 minutes to zero when sick (online) */
-        const healthPerMs = sickRef.current ? 1 / (90 * 60 * 1000) : 1 / (10 * 60 * 60 * 1000);
-        const happyPerMs  = sickRef.current ? 1 / (8 * 60 * 1000)  : 1 / (12 * 60 * 60 * 1000);
+        const hungerPerMs = fast ? 0.5 / 60000 : 0.5 / (90 * 60 * 1000);
+        const healthPerMs = sickRef.current ? 0.5 / (90 * 60 * 1000) : 1 / (10 * 60 * 60 * 1000);
+        const happyPerMs  = sickRef.current ? 0.5 / (8 * 60 * 1000)  : 0.5 / (12 * 60 * 1000);
         const dirtPerMs   = (poopsRef.current.length > 0 ? 1 / (5 * 60 * 60 * 1000) : 1 / (12 * 60 * 60 * 1000));
 
         // Accumulate awake time; when >= 30m, spawn exactly one poop
@@ -1251,16 +1250,13 @@ function simulateOffline(args: {
   let sick = args.startSick;
   const newly: number[] = [];
 
-  const hungerPerMinNormal = 1 / 90;
-  const healthPerMinNormal = 1 / (10 * 60);
-  const happyPerMinNormal  = 1 / (12 * 60);
-  const dirtPerMinNormal   = 1 / (12 * 60);
-
-  /** Sick health drain: 90 minutes to zero (offline) */
-  const healthPerMinSick = 1 / 90;
-  const happyPerMinSick  = 1 / 8;
-
-  const hungerPerMinFast = 1;
+const hungerPerMinNormal = 0.5 / 90;
+const healthPerMinNormal = 1 / (10 * 60);
+const happyPerMinNormal  = 0.5 / (12 * 60);
+const dirtPerMinNormal   = 1 / (12 * 60);
+const healthPerMinSick = 0.5 / 90;
+const happyPerMinSick  = 0.5 / 8;
+const hungerPerMinFast = 0.5;
 
   const schedule = [...(args.schedule || [])].sort((a,b)=>a-b);
   const consumedSet = new Set<number>(args.consumed || []);
