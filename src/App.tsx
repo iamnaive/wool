@@ -163,13 +163,9 @@ function AppInner() {
     };
 
     const onOpenGame = () => {
-      setIsVaultOpen(false);
-      if (livesRef.current > 0) {
-        setForceGame(true);
-      } else {
-        setIsVaultOpen(true);
-      }
-    };
+  setIsVaultOpen(false);
+  setForceGame(true);
+};
 
     window.addEventListener("wg:request-nft", onRequestNft as any);
     window.addEventListener("wg:nft-confirmed", onConfirmed as any);
@@ -280,7 +276,7 @@ function AppInner() {
         <div onClick={() => setIsVaultOpen(false)} className="modal">
           <div onClick={(e) => e.stopPropagation()} className="card" style={{ width: 520, maxWidth: "92vw" }}>
             <div className="title" style={{ fontSize: 20, marginBottom: 10, color: "white" }}>Send 1 NFT → +1 life</div>
-            <VaultPanel />
+            <VaultPanel onClose={() => setIsVaultOpen(false)} />
           </div>
         </div>
       )}
