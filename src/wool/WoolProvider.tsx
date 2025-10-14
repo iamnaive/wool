@@ -21,17 +21,8 @@
 //
 // Storage keys:
 //  - wg_wool_v1::<address>   -> { total:number, days: { ymd:string -> { collected:number } } }
-
 import { apiCollect } from "./woolApi";
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useAccount, usePublicClient, useChainId } from "wagmi";
 
 type WoolLedger = {
@@ -97,7 +88,7 @@ function saveLedger(addr: string, led: WoolLedger) {
 
 export const WoolProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { address: wagmiAddr } = useAccount();
-  const chainId = useChainId(); // ← explicit chainId (more reliable for signing/API)
+  const chainId = useChainId(); // explicit chainId
   const publicClient = usePublicClient();
 
   const address = (wagmiAddr?.toLowerCase() ?? "anon");
@@ -106,26 +97,12 @@ export const WoolProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [ledger, setLedger] = useState<WoolLedger>(() => loadLedger(address));
   const collectingRef = useRef(false); // debounce "double click" spam
 
-  // Dev helper: quick collector exposed to window (does NOT change app logic)
+  // Dev helper: expose quick runner
   useEffect(() => {
     (window as any).wgDebugCollect = async (n = 1) => {
-      console.log("[WOOL] wgDebugCollect start", {
-        n,
-        address,
-        chainId,
-        enabled,
-        ymd,
-      });
+      console.log("[WOOL] wgDebugCollect start", { n, address, chainId, enabled, ymd });
       for (let i = 0; i < n; i++) {
-        try {
-          // Force-enable path is still via events; here we just call collectOne()
-          // to see end-to-end API flow and logs.
-          // If you need force, dispatch wg:wool-force beforehand.
-          // @ts-ignore
-          await collectOne();
-        } catch (e) {
-          console.error("[WOOL] wgDebugCollect error", e);
-        }
+        try { await collectOne(); } catch (e) { console.error("[WOOL] wgDebugCollect error", e); }
       }
       console.log("[WOOL] wgDebugCollect done");
     };
@@ -147,7 +124,7 @@ export const WoolProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [publicClient, ymd]);
 
   useEffect(() => {
-    refreshDay(); // initial
+    refreshDay();
     const t = setInterval(refreshDay, 60000);
     return () => clearInterval(t);
   }, [refreshDay]);
@@ -186,14 +163,7 @@ export const WoolProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Main collect handler
   const collectOne = useCallback(async (): Promise<boolean> => {
-    // Visible logs to ensure we see every attempt
-    console.log("[WOOL] collectOne invoked", {
-      enabled,
-      address,
-      chainId,
-      anon: address === "anon",
-      ymd,
-    });
+    console.log("[WOOL] collectOne invoked", { enabled, address, chainId, anon: address === "anon", ymd });
 
     if (!enabled) {
       console.log("[WOOL] collect blocked: not enabled");
@@ -205,12 +175,11 @@ export const WoolProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     if (collectingRef.current) {
       console.log("[WOOL] collect debounced");
-      return false; // debounce
+      return false;
     }
     collectingRef.current = true;
 
     try {
-      // Resolve current day (chain time if available)
       const now = await getChainNow(publicClient);
       const dayKey = ymdFromDate(now);
       if (dayKey !== ymd) setYmd(dayKey);
@@ -232,7 +201,6 @@ export const WoolProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLedger({ ...current });
 
       // Server authoritative update
-      // Prefer wagmi chainId; fallback to viem client if needed.
       const chId =
         (typeof chainId === "number" && chainId) ||
         Number((publicClient as any)?.chain?.id ?? 0);
@@ -255,26 +223,19 @@ export const WoolProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       console.log("[WOOL] server ok", server);
-
       // Align local state to server response
       const srvDay = (server as any).ymd || dayKey;
       const synced = loadLedger(address);
       const sEntry = synced.days[srvDay] || { collected: 0 };
-      if (typeof server.dayCount === "number") {
-        sEntry.collected = Math.max(sEntry.collected, server.dayCount);
-      }
+      if (typeof server.dayCount === "number") sEntry.collected = Math.max(sEntry.collected, server.dayCount);
       synced.days[srvDay] = sEntry;
-      if (typeof server.total === "number") {
-        synced.total = Math.max(synced.total || 0, server.total);
-      }
+      if (typeof server.total === "number") synced.total = Math.max(synced.total || 0, server.total);
       saveLedger(address, synced);
       setLedger({ ...synced });
 
       return !(server.capped === true);
     } finally {
-      setTimeout(() => {
-        collectingRef.current = false;
-      }, 200);
+      setTimeout(() => { collectingRef.current = false; }, 200);
     }
   }, [address, enabled, publicClient, ymd, chainId]);
 
