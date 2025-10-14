@@ -1,68 +1,74 @@
 // src/wool/woolApi.ts
-// Signed calls to your Cloudflare Worker API.
+// Signed API calls to the Cloudflare Worker with safe fallback + verbose logs.
 
 import { v4 as uuidv4 } from "uuid";
 import { signMessage } from "@wagmi/core";
 
-// Fallback: use your public Worker URL if env is missing
-const API_BASE = (import.meta.env.VITE_WOOL_API as string)
-  || "https://wooligotchi-wool-api.wooligotchi.workers.dev";
+const API_BASE: string =
+  (import.meta as any).env?.VITE_WOOL_API ||
+  "https://wooligotchi-wool-api.wooligotchi.workers.dev";
 
-type CollectResult = {
-  ok: boolean;
-  ymd?: string;
-  dayCount?: number;
-  total?: number;
-  capped?: boolean;
-  error?: string;
-};
-
-function ymdUTC(d: Date): string {
+function ymdUTC(d = new Date()): string {
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
   const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}${m}${day}`;
 }
 
-export async function apiCollect(address: `0x${string}`, chainId: number): Promise<CollectResult> {
+export type CollectRes = {
+  ok: boolean;
+  total?: number;
+  dayCount?: number;
+  capped?: boolean;
+  error?: string;
+};
+
+export async function apiCollect(address: `0x${string}`, chainId: number): Promise<CollectRes> {
   const requestId = uuidv4();
-  const ymd = ymdUTC(new Date());
+  const ymd = ymdUTC();
   const message =
     `Wooligotchi collect\n` +
     `address:${address}\n` +
     `chain:${chainId}\n` +
     `yyyymmdd:${ymd}\n` +
     `request:${requestId}`;
+
+  console.log("[WOOL] signMessage ->", { address, chainId, requestId, ymd });
   const signature = await signMessage({ message });
 
-  const res = await fetch(`${API_BASE}/collect`, {
+  const url = `${API_BASE}/collect`;
+  const body = { address, chainId, requestId, message, signature };
+
+  console.log("[WOOL] → POST", url, body);
+  const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ address, chainId, requestId, message, signature }),
+    body: JSON.stringify(body),
   });
 
-  // Optional: surface errors for easier debugging
+  const text = await res.text().catch(() => "");
+  let json: CollectRes | null = null;
+  try { json = text ? JSON.parse(text) : null; } catch {}
+
+  console.log("[WOOL] ←", res.status, json || text);
   if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    throw new Error(`collect failed: ${res.status} ${txt}`);
+    throw new Error(json?.error || `collect failed: ${res.status} ${text}`);
   }
-  return res.json();
+  return (json as CollectRes) || { ok: true };
 }
 
 export async function apiLeaderboard(limit = 100) {
-  const r = await fetch(`${API_BASE}/leaderboard?limit=${limit}`);
-  if (!r.ok) {
-    const txt = await r.text().catch(() => "");
-    throw new Error(`leaderboard failed: ${r.status} ${txt}`);
-  }
-  return r.json() as Promise<{ ok: true; rows: Array<{ address: string; total: number }> }>;
+  const url = `${API_BASE}/leaderboard?limit=${limit}`;
+  console.log("[WOOL] GET", url);
+  const r = await fetch(url);
+  const text = await r.text().catch(() => "");
+  let json: any = null;
+  try { json = text ? JSON.parse(text) : null; } catch {}
+  console.log("[WOOL] LB ←", r.status, json || text);
+  if (!r.ok) throw new Error(`leaderboard failed: ${r.status} ${text}`);
+  return json as { ok: true; rows: Array<{ address: string; total: number }> };
 }
 
-export async function apiAddress(addr: string) {
-  const r = await fetch(`${API_BASE}/address/${addr}`);
-  if (!r.ok) {
-    const txt = await r.text().catch(() => "");
-    throw new Error(`address failed: ${r.status} ${txt}`);
-  }
-  return r.json() as Promise<{ ok: true; total: number; days: Record<string, { collected: number }> }>;
+export function getApiBase() {
+  return API_BASE;
 }
