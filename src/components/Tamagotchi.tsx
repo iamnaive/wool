@@ -1115,44 +1115,39 @@ export default function Tamagotchi({
       >
         {/* WOOL button — now calls the same working path as your console helper */}
         <button
-          data-wg="wool"
-          type="button"
-          className="btn"
-          onClick={async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+  data-wg="wool"
+  type="button"
+  className="btn"
+  onClick={async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
 
-            // Stage gate: visible + enabled matches original logic
-            if (!isAdult) {
-              console.warn("[WOOL] blocked: stage!=adult");
-              return;
-            }
+    // gate: only adult can collect
+    const stage = (window as any).__wg_last_stage || localStorage.getItem('wg_force_stage');
+    if (stage !== 'adult') {
+      console.warn('[WOOL] blocked: stage!=adult');
+      return;
+    }
 
-            // Optional network hint (does not block)
-            try {
-              const eth = (window as any).ethereum;
-              if (eth) {
-                const hex = await eth.request({ method: "eth_chainId" });
-                const ch = Number(hex);
-                if (ch !== 10143) console.warn("[WOOL] hint: wrong chain", ch, "(need 10143)");
-              }
-            } catch {}
+    // optional hint about network
+    try {
+      const hex = await (window as any).ethereum?.request({ method: 'eth_chainId' });
+      if (hex && Number(hex) !== 10143) console.warn('[WOOL] hint: wrong chain', Number(hex), '(need 10143)');
+    } catch {}
 
-            // Prefer your proven helpers; fallback to legacy event
-            if ((window as any).wgDebugCollect) {
-              await (window as any).wgDebugCollect(1);
-            } else if ((window as any).wgProbe) {
-              await (window as any).wgProbe(1);
-            } else {
-              try { window.dispatchEvent(new CustomEvent("wg:wool-click")); } catch {}
-            }
-          }}
-          disabled={!isAdult}
-          title={!isAdult ? "Available at adult stage" : undefined}
-          style={{ opacity: !isAdult ? 0.45 : 1, cursor: !isAdult ? "not-allowed" : "pointer" }}
-        >
-          🧶 WOOL
-        </button>
+    // call the same working path you used in console
+    if ((window as any).wgDebugCollect) {
+      await (window as any).wgDebugCollect(1);
+    } else if ((window as any).wgProbe) {
+      await (window as any).wgProbe(1);
+    } else {
+      window.dispatchEvent(new CustomEvent('wg:wool-click'));
+    }
+  }}
+>
+  🧶 WOOL
+</button>
+
 
         <button className="btn" onClick={act.feedBurger} disabled={burgerLeft>0}>🍔 Burger{burgerLeft>0?` (${Math.ceil(burgerLeft/1000)}s)`:``}</button>
         <button className="btn" onClick={act.feedCake} disabled={cakeLeft>0}>🍰 Cake{cakeLeft>0?` (${Math.ceil(cakeLeft/1000)}s)`:``}</button>
