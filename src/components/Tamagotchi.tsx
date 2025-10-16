@@ -23,7 +23,7 @@ function getLifeStage(form: FormKey): LifeStage {
 
 /** Evolution timings */
 const EVOLVE_CHILD_AT = 60_000;
-const EVOLVE_CHILD_AT = 2 * 24 * 3600_000;
+const EVOLVE_ADULT_AT = 2 * 24 * 3600_000;
 
 /** Assets */
 const BG_SRC = "/bg/BG.png";
