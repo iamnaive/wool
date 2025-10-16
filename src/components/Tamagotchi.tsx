@@ -1113,15 +1113,47 @@ export default function Tamagotchi({
           pointerEvents: deadNow ? ("none" as const) : ("auto" as const),
         }}
       >
+        {/* WOOL button — now calls the same working path as your console helper */}
         <button
+          data-wg="wool"
+          type="button"
           className="btn"
-          onClick={() => { try { window.dispatchEvent(new CustomEvent("wg:wool-click")); } catch {} }}
+          onClick={async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Stage gate: visible + enabled matches original logic
+            if (!isAdult) {
+              console.warn("[WOOL] blocked: stage!=adult");
+              return;
+            }
+
+            // Optional network hint (does not block)
+            try {
+              const eth = (window as any).ethereum;
+              if (eth) {
+                const hex = await eth.request({ method: "eth_chainId" });
+                const ch = Number(hex);
+                if (ch !== 10143) console.warn("[WOOL] hint: wrong chain", ch, "(need 10143)");
+              }
+            } catch {}
+
+            // Prefer your proven helpers; fallback to legacy event
+            if ((window as any).wgDebugCollect) {
+              await (window as any).wgDebugCollect(1);
+            } else if ((window as any).wgProbe) {
+              await (window as any).wgProbe(1);
+            } else {
+              try { window.dispatchEvent(new CustomEvent("wg:wool-click")); } catch {}
+            }
+          }}
           disabled={!isAdult}
           title={!isAdult ? "Available at adult stage" : undefined}
           style={{ opacity: !isAdult ? 0.45 : 1, cursor: !isAdult ? "not-allowed" : "pointer" }}
         >
           🧶 WOOL
         </button>
+
         <button className="btn" onClick={act.feedBurger} disabled={burgerLeft>0}>🍔 Burger{burgerLeft>0?` (${Math.ceil(burgerLeft/1000)}s)`:``}</button>
         <button className="btn" onClick={act.feedCake} disabled={cakeLeft>0}>🍰 Cake{cakeLeft>0?` (${Math.ceil(cakeLeft/1000)}s)`:``}</button>
         <button className="btn" onClick={act.play}>🎮 Play</button>
@@ -1213,10 +1245,7 @@ function safeReadJSON<T>(key: string): T | null {
 
 /** Infection log helpers (max N infections per rolling 24h) */
 function readInfectionLog(skf: (k: string) => string) {
-  try {
-    const arr = safeReadJSON<number[]>(skf(INFECTION_LOG_KEY));
-    return Array.isArray(arr) ? arr : [];
-  } catch { return []; }
+  try { const arr = safeReadJSON<number[]>(skf(INFECTION_LOG_KEY)); return Array.isArray(arr) ? arr : []; } catch { return []; }
 }
 function writeInfectionLog(skf: (k: string) => string, list: number[]) {
   try { localStorage.setItem(skf(INFECTION_LOG_KEY), JSON.stringify(list)); } catch {}
@@ -1250,13 +1279,13 @@ function simulateOffline(args: {
   let sick = args.startSick;
   const newly: number[] = [];
 
-const hungerPerMinNormal = 0.5 / 90;
-const healthPerMinNormal = 1 / (10 * 60);
-const happyPerMinNormal  = 0.5 / (12 * 60);
-const dirtPerMinNormal   = 1 / (12 * 60);
-const healthPerMinSick = 0.5 / 90;
-const happyPerMinSick  = 0.5 / 8;
-const hungerPerMinFast = 0.5;
+  const hungerPerMinNormal = 0.5 / 90;
+  const healthPerMinNormal = 1 / (10 * 60);
+  const happyPerMinNormal  = 0.5 / (12 * 60);
+  const dirtPerMinNormal   = 1 / (12 * 60);
+  const healthPerMinSick = 0.5 / 90;
+  const happyPerMinSick  = 0.5 / 8;
+  const hungerPerMinFast = 0.5;
 
   const schedule = [...(args.schedule || [])].sort((a,b)=>a-b);
   const consumedSet = new Set<number>(args.consumed || []);
