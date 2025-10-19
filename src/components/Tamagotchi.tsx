@@ -694,7 +694,7 @@ export default function Tamagotchi({
       const sleeping = isSleepingAt(now);
       if (dt > 0) {
         const fast = catastropheRef.current && now < (catastropheRef.current?.until ?? 0);
-        const hungerPerMs = fast ? 0.5 / 60000 : 1 / (5 * 60 * 1000); // голод всегда (5 минут от 1 до 0)
+        const hungerPerMs = fast ? 0.5 / 60000 : 1 / (60 * 1000);
         const healthPerMs = sickRef.current ? 0.5 / (90 * 60 * 1000) : 1 / (10 * 60 * 60 * 1000);
         const happyPerMs  = sickRef.current ? 0.5 / (8 * 60 * 1000)  : 0.5 / (12 * 60 * 1000);
         const dirtPerMs   = (poopsRef.current.length > 0 ? 1 / (5 * 60 * 60 * 1000) : 1 / (12 * 60 * 60 * 1000));
@@ -1276,8 +1276,7 @@ function simulateOffline(args: {
   let sick = args.startSick;
   const newly: number[] = [];
 
-  // ТЕКУЩИЕ ТЕМПЫ (голод за 5 минут от 1 до 0)
-  const hungerPerMinNormal = 1 / 5;
+  const hungerPerMinNormal = 1;
   const healthPerMinNormal = 1 / (10 * 60);
   const happyPerMinNormal  = 0.5 / (12 * 60);
   const dirtPerMinNormal   = 1 / (12 * 60);
