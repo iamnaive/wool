@@ -1318,13 +1318,13 @@ function simulateOffline(args: {
       }
     }
 
-    // Скорости за текущую минуту
-    const hungerDrop = catastropheActive ? hungerPerMinFast : hungerPerMinNormal; // голод всегда
+    
+    const hungerDrop = catastropheActive ? hungerPerMinFast : hungerPerMinNormal; 
     const healthDrop = sick ? healthPerMinSick : healthPerMinNormal;
     const happyDrop  = sick ? happyPerMinSick  : happyPerMinNormal;
     const dirtDrop   = dirtPerMinNormal;
 
-    // Применяем: голод всегда, остальное — только когда не спит
+    
     s = clampStats({
       cleanliness: s.cleanliness - (sleeping ? 0 : dirtDrop),
       hunger:      s.hunger      - (sleeping ? 0 : hungerDrop),
@@ -1332,7 +1332,7 @@ function simulateOffline(args: {
       health:      s.health      - (sleeping ? 0 : healthDrop),
     });
 
-    // Проверка смерти
+   
     if (s.hunger <= 0 || s.health <= 0) {
       died = true;
       wasCatastrophe = catastropheActive;
@@ -1344,7 +1344,7 @@ function simulateOffline(args: {
       break;
     }
 
-    // Инфекции — только в бодрствовании
+   
     if (!sleeping) {
       if (!sick) {
         const lowClean = 1 - s.cleanliness;
