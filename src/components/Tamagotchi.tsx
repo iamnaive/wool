@@ -710,7 +710,7 @@ export default function Tamagotchi({
           const awake = !sleeping;
           const next = clampStats({
             cleanliness: s.cleanliness - (awake ? dirtPerMs  * dt : 0),
-            hunger:      s.hunger      - (hungerPerMs * dt),      // всегда
+            hunger:      s.hunger      - (awake ? hungerPerMs * dt : 0),
             happiness:   s.happiness   - (awake ? happyPerMs * dt : 0),
             health:      s.health      - (awake ? healthPerMs * dt : 0),
           });
@@ -1327,7 +1327,7 @@ function simulateOffline(args: {
     // Применяем: голод всегда, остальное — только когда не спит
     s = clampStats({
       cleanliness: s.cleanliness - (sleeping ? 0 : dirtDrop),
-      hunger:      s.hunger      - hungerDrop,
+      hunger:      s.hunger      - (sleeping ? 0 : hungerDrop),
       happiness:   s.happiness   - (sleeping ? 0 : happyDrop),
       health:      s.health      - (sleeping ? 0 : healthDrop),
     });
