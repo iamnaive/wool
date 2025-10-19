@@ -691,14 +691,13 @@ export default function Tamagotchi({
         } catch {}
       }
 
-     const sleeping = isSleepingAt(now);
-if (dt > 0) {
-  const fast = catastropheRef.current && now < (catastropheRef.current?.until ?? 0);
-  const hungerPerMs = fast ? 0.5 / 60000 : 1 / (5 * 60 * 1000);
-  const healthPerMs = sickRef.current ? 0.5 / (90 * 60 * 1000) : 1 / (10 * 60 * 60 * 1000);
-  const happyPerMs  = sickRef.current ? 0.5 / (8 * 60 * 1000)  : 0.5 / (12 * 60 * 1000);
-  const dirtPerMs   = (poopsRef.current.length > 0 ? 1 / (5 * 60 * 60 * 1000) : 1 / (12 * 60 * 60 * 1000));
-
+      const sleeping = isSleepingAt(now);
+      if (dt > 0) {
+        const fast = catastropheRef.current && now < (catastropheRef.current?.until ?? 0);
+        const hungerPerMs = fast ? 0.5 / 60000 : 1 / (5 * 60 * 1000); // голод всегда (5 минут от 1 до 0)
+        const healthPerMs = sickRef.current ? 0.5 / (90 * 60 * 1000) : 1 / (10 * 60 * 60 * 1000);
+        const happyPerMs  = sickRef.current ? 0.5 / (8 * 60 * 1000)  : 0.5 / (12 * 60 * 1000);
+        const dirtPerMs   = (poopsRef.current.length > 0 ? 1 / (5 * 60 * 60 * 1000) : 1 / (12 * 60 * 60 * 1000));
 
         // Accumulate awake time; when >= 30m, spawn exactly one poop
         forcedPoopAccRef.current += dt;
@@ -707,23 +706,26 @@ if (dt > 0) {
           forcedPoopAccRef.current -= THIRTY_MIN_MS;
         }
 
-         setStats((s) => {
-    const awake = !sleeping;
-    const next = clampStats({
-      cleanliness: s.cleanliness - (awake ? dirtPerMs  * dt : 0),
-      hunger:      s.hunger      - (hungerPerMs * dt),      
-      happiness:   s.happiness   - (awake ? happyPerMs * dt : 0),
-      health:      s.health      - (awake ? healthPerMs * dt : 0),
-    });
-    if ((next.hunger <= 0 || next.health <= 0) && !deadRef.current) {
-      setIsDead(true);
-      setDeathReason(next.hunger <= 0 ? "starvation"
-        : (catastropheRef.current && now < (catastropheRef.current?.until ?? 0)) ? `fatal ${catastropheRef.current?.cause}`
-        : sickRef.current ? "illness" : "collapse");
-    }
-    return next;
-  });
-}
+        setStats((s) => {
+          const awake = !sleeping;
+          const next = clampStats({
+            cleanliness: s.cleanliness - (awake ? dirtPerMs  * dt : 0),
+            hunger:      s.hunger      - (hungerPerMs * dt),      // всегда
+            happiness:   s.happiness   - (awake ? happyPerMs * dt : 0),
+            health:      s.health      - (awake ? healthPerMs * dt : 0),
+          });
+          if ((next.hunger <= 0 || next.health <= 0) && !deadRef.current) {
+            setIsDead(true);
+            setDeathReason(
+              next.hunger <= 0
+                ? "starvation"
+                : (catastropheRef.current && now < (catastropheRef.current?.until ?? 0)) ? `fatal ${catastropheRef.current?.cause}`
+                : sickRef.current ? "illness" : "collapse"
+            );
+          }
+          return next;
+        });
+      }
 
       // Random dirt — but never more than one poop per 30 minutes (guarded)
       if (!sleeping && !deadRef.current) {
@@ -1274,6 +1276,7 @@ function simulateOffline(args: {
   let sick = args.startSick;
   const newly: number[] = [];
 
+  // ТЕКУЩИЕ ТЕМПЫ (голод за 5 минут от 1 до 0)
   const hungerPerMinNormal = 1 / 5;
   const healthPerMinNormal = 1 / (10 * 60);
   const happyPerMinNormal  = 0.5 / (12 * 60);
@@ -1302,8 +1305,8 @@ function simulateOffline(args: {
   let wasSickAtDeath = false;
 
   for (let i = 0; i < args.minutes; i++) {
-  const minuteWall = args.startWall + i * 60000;
-  const sleeping = args.sleepCheck(minuteWall);
+    const minuteWall = args.startWall + i * 60000;
+    const sleeping = args.sleepCheck(minuteWall);
 
     let catastropheActive = false;
     for (const t of schedule) {
@@ -1316,42 +1319,34 @@ function simulateOffline(args: {
       }
     }
 
-     const hungerDrop = catastropheActive ? hungerPerMinFast : hungerPerMinNormal;
-  const healthDrop = sick ? healthPerMinSick : healthPerMinNormal;
-  const happyDrop  = sick ? happyPerMinSick  : happyPerMinNormal;
-  const dirtDrop   = dirtPerMinNormal;
+    // Скорости за текущую минуту
+    const hungerDrop = catastropheActive ? hungerPerMinFast : hungerPerMinNormal; // голод всегда
+    const healthDrop = sick ? healthPerMinSick : healthPerMinNormal;
+    const happyDrop  = sick ? happyPerMinSick  : happyPerMinNormal;
+    const dirtDrop   = dirtPerMinNormal;
 
-  s = clampStats({
-    cleanliness: s.cleanliness - (sleeping ? 0 : dirtDrop),
-    hunger:      s.hunger      - hungerDrop,         // всегда
-    happiness:   s.happiness   - (sleeping ? 0 : happyDrop),
-    health:      s.health      - (sleeping ? 0 : healthDrop),
-  });
+    // Применяем: голод всегда, остальное — только когда не спит
+    s = clampStats({
+      cleanliness: s.cleanliness - (sleeping ? 0 : dirtDrop),
+      hunger:      s.hunger      - hungerDrop,
+      happiness:   s.happiness   - (sleeping ? 0 : happyDrop),
+      health:      s.health      - (sleeping ? 0 : healthDrop),
+    });
 
-  if (!sleeping) {
-    if (!sick) {
-      const lowClean = 1 - s.cleanliness;
-      const p = 0.02 + 0.3 * 0.3 + 0.2 * lowClean;
-      if (Math.random() < p * 0.03 * 60 && canInfectAt(minuteWall)) {
-        sick = true;
-        infectionTimes.push(minuteWall);
-      }
-    } else {
-      if (Math.random() < 0.015 * 60) sick = false;
+    // Проверка смерти
+    if (s.hunger <= 0 || s.health <= 0) {
+      died = true;
+      wasCatastrophe = catastropheActive;
+      wasSickAtDeath = sick;
+      deathReason =
+        s.hunger <= 0 ? "starvation"
+        : catastropheActive ? "fatal event"
+        : sick ? "illness" : "collapse";
+      break;
     }
-  }
 
-  if (s.hunger <= 0 || s.health <= 0) {
-    died = true;
-    wasCatastrophe = catastropheActive;
-    wasSickAtDeath = sick;
-    deathReason = s.hunger <= 0 ? "starvation"
-      : catastropheActive ? "fatal event"
-      : sick ? "illness" : "collapse";
-    break;
-  }
-}
-
+    // Инфекции — только в бодрствовании
+    if (!sleeping) {
       if (!sick) {
         const lowClean = 1 - s.cleanliness;
         const p = 0.02 + 0.3 * 0.3 + 0.2 * lowClean;
