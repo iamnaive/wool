@@ -24,7 +24,7 @@ const WoolCtx = createContext<WoolAPI | null>(null);
 
 const DAILY_CAP = 5;
 const LS_PREFIX = "wg_wool_v1::";
-const STAGE_LS_KEY = "wg_force_stage"; // "adult" here forces enable in dev
+const STAGE_LS_KEY = "wg_force_stage"; // dev-localStorage flag (disabled in gate below)
 
 async function getChainNow(publicClient: ReturnType<typeof usePublicClient> | null): Promise<Date> {
   try {
@@ -61,20 +61,20 @@ export const WoolProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const address = (wagmiAddr?.toLowerCase() ?? "anon");
 
-  // UI flag; real gate also considers force + localStorage + window marker
+  // UI flag; the effective gate uses ONLY enabledState to avoid dev forces
   const [enabledState, setEnabledState] = useState(false);
-  const forceRef = useRef(false);
+  const forceRef = useRef(false); // [DISABLED FORCE] kept for compatibility/logs
   const [ymd, setYmd] = useState(() => ymdFromDate(new Date()));
   const [ledger, setLedger] = useState<WoolLedger>(() => loadLedger(address));
   const collectingRef = useRef(false);
 
   // ---------- Dev helpers on window ----------
   useEffect(() => {
+    // [DISABLED FORCE] do not allow programmatic forcing via window helper
     (window as any).wgSetForce = (on: boolean) => {
-      forceRef.current = !!on;
-      // keep UI in sync so the button doesn't look disabled
-      setEnabledState(prev => prev || !!on);
-      console.log("[WOOL] force set ->", forceRef.current);
+      console.log("[WOOL] wgSetForce called but force is disabled; ignoring:", on);
+      // forceRef.current = !!on; // disabled
+      // setEnabledState(prev => prev || !!on); // disabled
     };
     (window as any).wgDebugCollect = async (n = 1) => {
       console.log("[WOOL] wgDebugCollect start", { n, address, chainId, enabledState, force: forceRef.current, ymd });
@@ -95,15 +95,15 @@ export const WoolProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [address, chainId, enabledState, ymd]);
   // ------------------------------------------
 
-  // On mount: respect localStorage stage override (dev)
+  // [DISABLED FORCE] do not auto-enable from localStorage "wg_force_stage"
   useEffect(() => {
     try {
       const forced = (localStorage.getItem(STAGE_LS_KEY) || "").toLowerCase();
       if (forced === "adult") {
-        setEnabledState(true);
-        forceRef.current = true;
-        (window as any).__wg_last_stage = "adult";
-        console.log("[WOOL] dev stage forced via localStorage -> adult");
+        console.log("[WOOL] localStorage wg_force_stage=adult detected but force is disabled; ignoring");
+        // setEnabledState(true); // disabled
+        // forceRef.current = true; // disabled
+        // (window as any).__wg_last_stage = "adult"; // disabled
       }
     } catch {}
   }, []);
@@ -128,22 +128,26 @@ export const WoolProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const onStage = (ev: Event) => {
       const det = (ev as CustomEvent).detail as { stage?: string } | undefined;
       const stage = (det?.stage || "").toLowerCase();
-      // Remember last stage globally for debug and dev overrides
+      // Remember last stage for debug only
       (window as any).__wg_last_stage = stage;
-      // UI state reflects real stage; gate may also consider force/localStorage
+      // Effective UI state reflects real stage only
       setEnabledState(stage === "adult");
       console.log("[WOOL] event wg:pet-stage", stage, "-> enabledState:", stage === "adult");
     };
+
+    // [DISABLED FORCE] do not accept external "force" event
     const onForce = (ev: Event) => {
       const det = (ev as CustomEvent).detail as { on?: boolean } | undefined;
-      forceRef.current = !!det?.on;
-      setEnabledState(prev => prev || forceRef.current);
-      console.log("[WOOL] event wg:wool-force", forceRef.current);
+      console.log("[WOOL] event wg:wool-force received but force is disabled; ignoring", det);
+      // forceRef.current = !!det?.on; // disabled
+      // setEnabledState(prev => prev || forceRef.current); // disabled
     };
+
     const onClick = async () => {
       console.log("[WOOL] event wg:wool-click (received)");
       await collectOne();
     };
+
     window.addEventListener("wg:pet-stage", onStage as EventListener);
     window.addEventListener("wg:wool-force", onForce as EventListener);
     window.addEventListener("wg:wool-click", onClick as EventListener);
@@ -155,11 +159,9 @@ export const WoolProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  // True gate = UI stage OR force flag OR dev override from localStorage/window
+  // Effective gate: ONLY real stage (adult) controls enablement
   const isEnabledNow = () => {
-    const forcedLS = (localStorage.getItem(STAGE_LS_KEY) || "").toLowerCase() === "adult";
-    const lastStage = ((window as any).__wg_last_stage || "").toLowerCase() === "adult";
-    return enabledState || forceRef.current || forcedLS || lastStage;
+    return enabledState; // no dev forces, no localStorage override
   };
 
   const collectOne = useCallback(async (): Promise<boolean> => {
@@ -167,7 +169,7 @@ export const WoolProvider: React.FC<{ children: React.ReactNode }> = ({ children
     console.log("[WOOL] collectOne invoked", {
       enabled,
       enabledState,
-      force: forceRef.current,
+      force: forceRef.current, // informational only
       address,
       chainId,
       anon: address === "anon",
@@ -263,7 +265,12 @@ export const WoolProvider: React.FC<{ children: React.ReactNode }> = ({ children
       todayRemaining,
       total: ledger.total || 0,
       collectOne,
-      forceEnable: (on: boolean) => { forceRef.current = !!on; setEnabledState(prev => prev || !!on); },
+      // [DISABLED FORCE] keep the signature, make it a no-op to avoid forcing
+      forceEnable: (on: boolean) => {
+        console.log("[WOOL] forceEnable called but force is disabled; ignoring:", on);
+        // forceRef.current = !!on; // disabled
+        // setEnabledState(prev => prev || !!on); // disabled
+      },
       ymd,
     };
   }, [address, ledger, ymd, collectOne, enabledState]);
