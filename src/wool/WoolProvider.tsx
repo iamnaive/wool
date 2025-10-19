@@ -22,7 +22,7 @@ type WoolAPI = {
 
 const WoolCtx = createContext<WoolAPI | null>(null);
 
-const DAILY_CAP = 10;
+const DAILY_CAP = 5;
 const LS_PREFIX = "wg_wool_v1::";
 const STAGE_LS_KEY = "wg_force_stage"; // "adult" here forces enable in dev
 
