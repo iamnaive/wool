@@ -691,7 +691,7 @@ export default function Tamagotchi({
         } catch {}
       }
 
-      const sleeping = isSleepingAt(now);
+     const sleeping = isSleepingAt(now);
 if (dt > 0) {
   const fast = catastropheRef.current && now < (catastropheRef.current?.until ?? 0);
   const hungerPerMs = fast ? 0.5 / 60000 : 1 / (5 * 60 * 1000);
@@ -707,7 +707,7 @@ if (dt > 0) {
           forcedPoopAccRef.current -= THIRTY_MIN_MS;
         }
 
-        setStats((s) => {
+         setStats((s) => {
     const awake = !sleeping;
     const next = clampStats({
       cleanliness: s.cleanliness - (awake ? dirtPerMs  * dt : 0),
@@ -1274,7 +1274,7 @@ function simulateOffline(args: {
   let sick = args.startSick;
   const newly: number[] = [];
 
-  const hungerPerMinNormal = 1 / 180;
+  const hungerPerMinNormal = 1 / 5;
   const healthPerMinNormal = 1 / (10 * 60);
   const happyPerMinNormal  = 0.5 / (12 * 60);
   const dirtPerMinNormal   = 1 / (12 * 60);
@@ -1302,8 +1302,8 @@ function simulateOffline(args: {
   let wasSickAtDeath = false;
 
   for (let i = 0; i < args.minutes; i++) {
-    const minuteWall = args.startWall + i * 60000;
-    const sleeping = args.sleepCheck(minuteWall);
+  const minuteWall = args.startWall + i * 60000;
+  const sleeping = args.sleepCheck(minuteWall);
 
     let catastropheActive = false;
     for (const t of schedule) {
@@ -1316,29 +1316,41 @@ function simulateOffline(args: {
       }
     }
 
-    if (!sleeping) {
-      const hungerDrop = catastropheActive ? hungerPerMinFast : hungerPerMinNormal;
-      const healthDrop = sick ? healthPerMinSick : healthPerMinNormal;
-      const happyDrop  = sick ? happyPerMinSick  : happyPerMinNormal;
-      const dirtDrop   = dirtPerMinNormal;
+     const hungerDrop = catastropheActive ? hungerPerMinFast : hungerPerMinNormal;
+  const healthDrop = sick ? healthPerMinSick : healthPerMinNormal;
+  const happyDrop  = sick ? happyPerMinSick  : happyPerMinNormal;
+  const dirtDrop   = dirtPerMinNormal;
 
-      s = clampStats({
-        cleanliness: s.cleanliness - dirtDrop,
-        hunger:      s.hunger      - hungerDrop,
-        happiness:   s.happiness   - happyDrop,
-        health:      s.health      - healthDrop,
-      });
+  s = clampStats({
+    cleanliness: s.cleanliness - (sleeping ? 0 : dirtDrop),
+    hunger:      s.hunger      - hungerDrop,         // всегда
+    happiness:   s.happiness   - (sleeping ? 0 : happyDrop),
+    health:      s.health      - (sleeping ? 0 : healthDrop),
+  });
 
-      if (s.hunger <= 0 || s.health <= 0) {
-        died = true;
-        wasCatastrophe = catastropheActive;
-        wasSickAtDeath = sick;
-        deathReason =
-          s.hunger <= 0 ? "starvation"
-          : catastropheActive ? "fatal event"
-          : sick ? "illness" : "collapse";
-        break;
+  if (!sleeping) {
+    if (!sick) {
+      const lowClean = 1 - s.cleanliness;
+      const p = 0.02 + 0.3 * 0.3 + 0.2 * lowClean;
+      if (Math.random() < p * 0.03 * 60 && canInfectAt(minuteWall)) {
+        sick = true;
+        infectionTimes.push(minuteWall);
       }
+    } else {
+      if (Math.random() < 0.015 * 60) sick = false;
+    }
+  }
+
+  if (s.hunger <= 0 || s.health <= 0) {
+    died = true;
+    wasCatastrophe = catastropheActive;
+    wasSickAtDeath = sick;
+    deathReason = s.hunger <= 0 ? "starvation"
+      : catastropheActive ? "fatal event"
+      : sick ? "illness" : "collapse";
+    break;
+  }
+}
 
       if (!sick) {
         const lowClean = 1 - s.cleanliness;
