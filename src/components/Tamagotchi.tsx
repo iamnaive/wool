@@ -1274,7 +1274,7 @@ function simulateOffline(args: {
   let sick = args.startSick;
   const newly: number[] = [];
 
-  const hungerPerMinNormal = 1 / 5;
+  const hungerPerMinNormal = 1 / 180;
   const healthPerMinNormal = 1 / (10 * 60);
   const happyPerMinNormal  = 0.5 / (12 * 60);
   const dirtPerMinNormal   = 1 / (12 * 60);
