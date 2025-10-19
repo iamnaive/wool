@@ -692,12 +692,13 @@ export default function Tamagotchi({
       }
 
       const sleeping = isSleepingAt(now);
-      if (!sleeping && dt > 0) {
-        const fast = catastropheRef.current && now < (catastropheRef.current?.until ?? 0);
-        const hungerPerMs = fast ? 0.5 / 60000 : 1 / (180 * 60 * 1000);
-        const healthPerMs = sickRef.current ? 0.5 / (90 * 60 * 1000) : 1 / (10 * 60 * 60 * 1000);
-        const happyPerMs  = sickRef.current ? 0.5 / (8 * 60 * 1000)  : 0.5 / (12 * 60 * 1000);
-        const dirtPerMs   = (poopsRef.current.length > 0 ? 1 / (5 * 60 * 60 * 1000) : 1 / (12 * 60 * 60 * 1000));
+if (dt > 0) {
+  const fast = catastropheRef.current && now < (catastropheRef.current?.until ?? 0);
+  const hungerPerMs = fast ? 0.5 / 60000 : 1 / (5 * 60 * 1000);
+  const healthPerMs = sickRef.current ? 0.5 / (90 * 60 * 1000) : 1 / (10 * 60 * 60 * 1000);
+  const happyPerMs  = sickRef.current ? 0.5 / (8 * 60 * 1000)  : 0.5 / (12 * 60 * 1000);
+  const dirtPerMs   = (poopsRef.current.length > 0 ? 1 / (5 * 60 * 60 * 1000) : 1 / (12 * 60 * 60 * 1000));
+
 
         // Accumulate awake time; when >= 30m, spawn exactly one poop
         forcedPoopAccRef.current += dt;
@@ -707,23 +708,22 @@ export default function Tamagotchi({
         }
 
         setStats((s) => {
-          const next = clampStats({
-            cleanliness: s.cleanliness - dirtPerMs * dt,
-            hunger:      s.hunger      - hungerPerMs * dt,
-            happiness:   s.happiness   - happyPerMs  * dt,
-            health:      s.health      - healthPerMs * dt,
-          });
-          if ((next.hunger <= 0 || next.health <= 0) && !deadRef.current) {
-            setIsDead(true);
-            setDeathReason(
-              next.hunger <= 0 ? "starvation"
-              : (catastropheRef.current && now < (catastropheRef.current?.until ?? 0)) ? `fatal ${catastropheRef.current?.cause}`
-              : sickRef.current ? "illness" : "collapse"
-            );
-          }
-          return next;
-        });
-      }
+    const awake = !sleeping;
+    const next = clampStats({
+      cleanliness: s.cleanliness - (awake ? dirtPerMs  * dt : 0),
+      hunger:      s.hunger      - (hungerPerMs * dt),      
+      happiness:   s.happiness   - (awake ? happyPerMs * dt : 0),
+      health:      s.health      - (awake ? healthPerMs * dt : 0),
+    });
+    if ((next.hunger <= 0 || next.health <= 0) && !deadRef.current) {
+      setIsDead(true);
+      setDeathReason(next.hunger <= 0 ? "starvation"
+        : (catastropheRef.current && now < (catastropheRef.current?.until ?? 0)) ? `fatal ${catastropheRef.current?.cause}`
+        : sickRef.current ? "illness" : "collapse");
+    }
+    return next;
+  });
+}
 
       // Random dirt — but never more than one poop per 30 minutes (guarded)
       if (!sleeping && !deadRef.current) {
